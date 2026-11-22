@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.fromHtml
 import android.content.Context
@@ -1215,28 +1216,66 @@ class BilaiShell(private val activity: ComponentActivity) {
     @Composable
     private fun Overlay(name: String, dismiss: () -> Unit) {
         val p = LocalBilaiColors.current
-        val info by engine.current.collectAsState()
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
         var input by remember(name) { mutableStateOf("") }
-        Dialog(onDismissRequest = dismiss) {
-            Column(Modifier.fillMaxWidth().background(p.sheetBg, RoundedCornerShape(16.dp)).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                FeedText(name, 14, p.text, FontWeight.Bold)
-                when (name) {
-                    "Open Any YouTube URL" -> {
-                        FeedText("ভিডিও লিংক এখানে পেস্ট করো", 11, p.muted)
-                        BasicTextField(input, { input = it }, singleLine = true,
-                            textStyle = TextStyle(color = p.text, fontSize = 12.sp),
-                            modifier = Modifier.fillMaxWidth().background(p.elevated, RoundedCornerShape(12.dp)).padding(12.dp),
-                            decorationBox = { field ->
-                                Box {
-                                    if (input.isEmpty()) FeedText("https://www.youtube.com/watch?v=dQw4w9WgXcQ", 12, p.muted)
-                                    field()
-                                }
-                            })
-                        WatchPill("Play Video", p.onAccent, p.accent) { openUrl(input) }
+        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+        val valid = remember(input) { youtubeId(input) != null || input.contains("youtube.com/") || input.contains("youtu.be/") }
+        LaunchedEffect(name) {
+            // Offer a copied YouTube link right away.
+            val copied = runCatching { clipboard.getText()?.text.orEmpty().trim() }.getOrDefault("")
+            if (input.isEmpty() && (copied.contains("youtube.com/") || copied.contains("youtu.be/"))) input = copied
+            runCatching { focus.requestFocus() }
+        }
+        AnimatedSheet(dismiss, topRadius = 24.dp) { sheet ->
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(44.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                        MIcon(Icons.Rounded.Link, p.accent, 24.dp)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        BText("Open a YouTube link", 17f, p.text, FontWeight.Bold)
+                        BText("Videos, Shorts, playlists and channels", 12f, p.muted)
                     }
                 }
-                WatchPill("Close", p.text, p.elevated, click = dismiss)
+                Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp)).background(p.elevated)
+                    .border(1.5.dp, if (valid) p.accent else Color.Transparent, RoundedCornerShape(14.dp))
+                    .padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicTextField(input, { input = it }, Modifier.weight(1f).focusRequester(focus), singleLine = true,
+                        textStyle = TextStyle(color = p.text, fontSize = 14.sp, fontFamily = BilaiFont),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(p.accent),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = {
+                            if (valid) { openUrl(input); sheet.close() } }),
+                        decorationBox = { field ->
+                            Box {
+                                if (input.isEmpty()) BText("Paste a link (youtube.com or youtu.be)", 14f, p.muted)
+                                field()
+                            }
+                        })
+                    if (input.isNotEmpty()) RoundIconButton(Icons.Rounded.Close, "Clear", p.muted, Color.Transparent, 36.dp, 18.dp) {
+                        input = ""
+                    } else Box(Modifier.clip(CircleShape).clickable {
+                        input = runCatching { clipboard.getText()?.text.orEmpty().trim() }.getOrDefault("")
+                    }.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        BText("Paste", 13f, p.accent, FontWeight.SemiBold)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f).clip(CircleShape).background(p.elevated).clickable(onClick = sheet.close)
+                        .padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
+                        BText("Cancel", 14f, p.text, FontWeight.SemiBold)
+                    }
+                    Row(Modifier.weight(1f).clip(CircleShape).background(if (valid) p.accent else p.elevated)
+                        .clickable(enabled = valid) { openUrl(input); sheet.close() }.padding(vertical = 13.dp),
+                        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        MIcon(Icons.Rounded.PlayArrow, if (valid) p.onAccent else p.muted, 20.dp)
+                        Spacer(Modifier.width(4.dp))
+                        BText("Play", 14f, if (valid) p.onAccent else p.muted, FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.navigationBarsPadding().imePadding())
             }
         }
     }
