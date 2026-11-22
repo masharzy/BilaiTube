@@ -1,88 +1,43 @@
 #!/usr/bin/env bash
-# Runs inside the emulator job. Never fails the job: every step is best-effort and logged.
-# usage: ci-screenshots.sh <apk> <outdir>
-APK="$1"; OUT="$2"; PKG=com.masharzy.bilaitube
-ACT=org.schabi.newpipe.MainActivity
-mkdir -p "$OUT"
-log() { echo "[$(date +%T)] $*" | tee -a "$OUT/steps.log"; }
-shot() { adb exec-out screencap -p > "$OUT/$1.png" 2>>"$OUT/steps.log" && log "shot $1"; }
-dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/$1.xml" >/dev/null 2>&1; }
-start() { adb shell am start -W -n "$PKG/$ACT" "$@" >>"$OUT/steps.log" 2>&1; sleep 4; }
+set -euo pipefail
 
-# Dismiss first-run dialogs (legacy "What's New", update checker, announcements) by tapping NO/OK/Cancel buttons.
-dismiss_dialogs() {
-  for _ in 1 2 3 4 5 6; do
-    adb shell uiautomator dump /sdcard/d.xml >/dev/null 2>&1
-    adb pull /sdcard/d.xml /tmp/d.xml >/dev/null 2>&1
-    xy=$(python3 - <<'PY'
-import re
-try: s=open('/tmp/d.xml',encoding='utf-8').read()
-except Exception: raise SystemExit
-for want in ('NO','OK','Cancel','CANCEL','Not now','Skip','Allow'):
-    for m in re.finditer(r'<node[^>]*text="%s"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'%want,s):
-        a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); raise SystemExit
+apk=$1
+out=$2
+pkg=com.masharzy.bilaitube
+mkdir -p "$out"
+trap 'adb logcat -d -b crash -v time > "$out/crash.txt" || true' EXIT
+adb install -r "$apk" | tee "$out/install.txt"
+adb logcat -c
+adb shell wm size 1170x2532
+adb shell wm density 480
+adb shell settings put system font_scale 1.0
+
+capture() {
+  local name=$1 dark=$2 accent=$3 tab=$4
+  adb shell am force-stop "$pkg"
+  adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+    --ez bt.dark "$dark" --es bt.accent "$accent" --es bt.tab "$tab" | tee "$out/$name.launch.txt"
+  adb shell uiautomator dump /sdcard/bilai-ui.xml
+  adb pull /sdcard/bilai-ui.xml "$out/$name.xml"
+  python3 - "$out/$name.xml" "$tab" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+nodes = {node.get("resource-id"): node for node in ET.parse(sys.argv[1]).iter("node")}
+for tag in ("tab_home", "tab_shorts", "tab_subs", "tab_you", "btn_theme", "btn_accent", "btn_search"):
+    assert tag in nodes, f"Missing Compose hook: {tag}"
+active = "tab_" + sys.argv[2]
+assert nodes[active].get("selected") == "true", f"Expected selected tab: {active}"
 PY
-)
-    [ -z "$xy" ] && break
-    log "dismiss tap $xy"; adb shell input tap $xy; sleep 1
-  done
+  adb exec-out screencap -p > "$out/$name.png"
+  test -s "$out/$name.png"
 }
 
-adb install -r -g "$APK" >>"$OUT/steps.log" 2>&1 || { log "install failed"; exit 0; }
-adb shell settings put global window_animation_scale 1
-read W H < <(adb shell wm size | tail -1 | sed -E 's/.*: ([0-9]+)x([0-9]+).*/\1 \2/')
-log "screen ${W}x${H}"
-adb logcat -c
-# warm-up launch to clear first-run dialogs once
-start; dismiss_dialogs; dismiss_dialogs
-
-# 1. theme/accent matrix (needs debug hooks; falls back to default UI if not implemented yet)
-n=1
-for combo in "true amber" "false amber" "true red" "false red"; do
-  set -- $combo
-  adb shell am force-stop $PKG
-  start --ez bt.dark "$1" --es bt.accent "$2" --es bt.tab home
-  shot "$(printf '%02d' $n)_home_${1}_${2}"; n=$((n+1))
-done
-dump home
-
-# 2. other tabs
-for tab in shorts subs you; do
-  adb shell am force-stop $PKG
-  start --ez bt.dark true --es bt.accent amber --es bt.tab $tab
-  shot "$(printf '%02d' $n)_tab_$tab"; n=$((n+1))
-done
-
-# 3. player + physics with a local sample (debug hook)
-adb shell am force-stop $PKG
-start --ez bt.dark true --es bt.accent amber --es bt.tab home
-if [ -f /tmp/sample.mp4 ]; then adb push /tmp/sample.mp4 /sdcard/Download/sample.mp4 >/dev/null 2>&1; fi
-adb shell am start -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri file:///sdcard/Download/sample.mp4 >>"$OUT/steps.log" 2>&1
-sleep 5
-shot 08_watch_expanded; dump watch_expanded
-
-cx=$((W/2)); y0=$((H*22/100))
-# slow drag to ~50% and hold -> mid-drag screenshot (swipe with long duration, capture while it runs)
-adb shell input swipe $cx $y0 $cx $((H*55/100)) 1600 &
-for i in 1 2 3 4 5 6 7 8; do sleep 0.18; adb exec-out screencap -p > "$OUT/drag_$i.png"; done
-wait
-shot 09_after_slow_drag
-
-# fast flick down -> minimized bottom-right
-adb shell input swipe $cx $y0 $cx $((H*70/100)) 120
-sleep 1.5; shot 10_mini_after_flick; dump mini
-
-# drag the mini to top-left and release with inertia
-mx=$((W*75/100)); my=$((H*80/100))
-adb shell input swipe $mx $my $((W*20/100)) $((H*15/100)) 200
-sleep 1.5; shot 11_mini_tl
-
-# tap mini to expand
-adb shell input tap $((W*20/100)) $((H*15/100)); sleep 1.5; shot 12_expanded_again
-
-# jank stats
-adb shell dumpsys gfxinfo $PKG > "$OUT/gfxinfo.txt" 2>&1
-adb logcat -d -v time > "$OUT/logcat.txt" 2>&1
-adb logcat -d -b crash -v time > "$OUT/crash.txt" 2>&1
-log "done"
-exit 0
+capture 01_home_dark_amber true amber home
+capture 02_home_light_amber false amber home
+capture 03_home_dark_red true red home
+capture 04_home_light_red false red home
+capture 05_tab_shorts true amber shorts
+capture 06_tab_subs true amber subs
+capture 07_tab_you true amber you
+adb logcat -d -v time > "$out/logcat.txt"
