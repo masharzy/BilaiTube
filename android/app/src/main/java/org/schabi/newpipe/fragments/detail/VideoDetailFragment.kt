@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import org.schabi.newpipe.views.PlayerSheetLayout
 import org.schabi.newpipe.R
 import org.schabi.newpipe.databinding.FragmentVideoDetailBinding
 import org.schabi.newpipe.error.ErrorInfo
@@ -741,9 +742,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     // Bottom sheet
 
     /** The sheet belongs to the activity and is there even while this page has no views. */
-    private fun sheetBehavior(): BottomSheetBehavior<FrameLayout>? =
-        activity?.findViewById<FrameLayout>(R.id.fragment_player_holder)
-            ?.let { BottomSheetBehavior.from(it) }
+    private fun sheetBehavior(): PlayerSheetLayout? =
+        activity?.findViewById<PlayerSheetLayout>(R.id.player_sheet)
 
     private fun onDetailEvent(event: DetailPlayerEvents.Event) {
         val behavior = sheetBehavior() ?: return

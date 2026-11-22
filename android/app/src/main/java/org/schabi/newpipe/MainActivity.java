@@ -53,7 +53,7 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.preference.PreferenceManager;
 
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import org.schabi.newpipe.views.PlayerSheetLayout;
 
 import org.schabi.newpipe.databinding.ActivityMainBinding;
 import org.schabi.newpipe.databinding.DrawerHeaderBinding;
@@ -663,8 +663,7 @@ public class MainActivity extends AppCompatActivity {
             // delegate the back press to it
             if (fragmentPlayer instanceof BackPressable) {
                 if (!((BackPressable) fragmentPlayer).onBackPressed()) {
-                    BottomSheetBehavior.from(mainBinding.fragmentPlayerHolder)
-                            .setState(BottomSheetBehavior.STATE_COLLAPSED);
+                    mainBinding.playerSheet.setState(PlayerSheetLayout.STATE_COLLAPSED);
                 }
                 return;
             }
@@ -934,12 +933,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean bottomSheetHiddenOrCollapsed() {
-        final BottomSheetBehavior<FrameLayout> bottomSheetBehavior =
-                BottomSheetBehavior.from(mainBinding.fragmentPlayerHolder);
-
-        final int sheetState = bottomSheetBehavior.getState();
-        return sheetState == BottomSheetBehavior.STATE_HIDDEN
-                || sheetState == BottomSheetBehavior.STATE_COLLAPSED;
+        final int sheetState = mainBinding.playerSheet.getState();
+        return sheetState == PlayerSheetLayout.STATE_HIDDEN
+                || sheetState == PlayerSheetLayout.STATE_COLLAPSED;
     }
 
     public static void trustEveryone() {

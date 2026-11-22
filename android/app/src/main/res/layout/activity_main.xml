@@ -23,15 +23,18 @@
             layout="@layout/selection_toolbar"
             android:id="@+id/selection_toolbar" />
 
-        <androidx.fragment.app.FragmentContainerView
-            android:id="@+id/fragment_player_holder"
+        <org.schabi.newpipe.views.PlayerSheetLayout
+            android:id="@+id/player_sheet"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_gravity="center_horizontal"
-            app:gestureInsetBottomIgnored="true"
-            app:behavior_hideable="true"
-            app:behavior_peekHeight="0dp"
-            app:layout_behavior="org.schabi.newpipe.player.event.CustomBottomSheetBehavior" />
+            android:visibility="invisible">
+
+            <androidx.fragment.app.FragmentContainerView
+                android:id="@+id/fragment_player_holder"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+        </org.schabi.newpipe.views.PlayerSheetLayout>
 
     </org.schabi.newpipe.views.FocusAwareCoordinator>
 
