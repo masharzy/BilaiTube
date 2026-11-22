@@ -288,6 +288,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var userDark by mutableStateOf(prefs.getBoolean("dark", true))
     private var fixtureSignedIn by mutableStateOf(false)
     private var fixtureSubs by mutableStateOf(false)
+    private var fixtureYou by mutableStateOf(false)
     private fun changeDark() {
         val next = !(debugDark ?: userDark)
         userDark = next
@@ -378,6 +379,7 @@ class BilaiShell(private val activity: ComponentActivity) {
             tab = Tab.YOU
         }
         if (intent.getBooleanExtra("bt.subs_fixture", false)) fixtureSubs = true
+        if (intent.getBooleanExtra("bt.you_fixture", false)) fixtureYou = true
         if (intent.getBooleanExtra("bt.shorts_fixture", false)) {
             val uri = Uri.fromFile(java.io.File(activity.filesDir.parentFile, "sample.mp4")).toString()
             debugShorts = WatchReviewFixture.shorts(uri)
@@ -463,7 +465,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     { react(Reaction.LIKE) }, { react(Reaction.DISLIKE) },
                                     { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share)
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu, fixture = BuildConfig.DEBUG && fixtureSubs)
-                                Tab.YOU -> YouTab(dark, red, signedIn || (BuildConfig.DEBUG && fixtureSignedIn),
+                                Tab.YOU -> YouTab(dark, red, BuildConfig.DEBUG && fixtureYou,
+                                    signedIn || (BuildConfig.DEBUG && fixtureSignedIn),
                                     if (BuildConfig.DEBUG && fixtureSignedIn) "devforge@example.com" else accountEmail,
                                     ::changeDark, ::changeAccent, ::play, { overlay = it },
                                     sponsorBlock, ::toggleSponsorBlock, hideShorts) {
