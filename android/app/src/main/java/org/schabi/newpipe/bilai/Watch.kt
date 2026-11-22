@@ -6,11 +6,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.Page
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.util.ExtractorHelper
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,11 +49,34 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 @Composable
 internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: Boolean,
-                   onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float, close: () -> Unit, playNext: (String, String) -> Unit,
+                   onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float,
+                   captionsOn: Boolean, toggleCaptions: () -> Unit,
+                   autoplay: Boolean, toggleAutoplay: () -> Unit, close: () -> Unit, playNext: (String, String) -> Unit,
                    overlay: (String) -> Unit) {
     val p = LocalBilaiColors.current
     val playback by engine.state.collectAsState()
     val info by engine.current.collectAsState()
+    val related = remember(info) { info?.relatedItems.orEmpty().filterIsInstance<StreamInfoItem>() }
+    val next = related.firstOrNull()
+    var more by remember(url) { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
+    var continuation by remember(url) { mutableStateOf<Page?>(null) }
+    var searched by remember(url) { mutableStateOf(false) }
+    var exhausted by remember(url) { mutableStateOf(false) }
+    var loadingMore by remember(url) { mutableStateOf(false) }
+    val recommendations = remember(url, related, more) {
+        (related + more).filter { it.url != url }.distinctBy { it.url }
+    }
+    var autoplayCancelled by remember(url) { mutableStateOf(false) }
+    var countdown by remember(url) { mutableIntStateOf(5) }
+    LaunchedEffect(url, playback.ended, autoplay, autoplayCancelled, next?.url) {
+        if (playback.ended && autoplay && !autoplayCancelled && next != null) {
+            for (seconds in 5 downTo 1) {
+                countdown = seconds
+                kotlinx.coroutines.delay(1000)
+            }
+            playNext(next.url, next.name)
+        }
+    }
     val motion = remember { PlayerMotion() }
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
@@ -89,26 +121,67 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
         val fullHeight = (maxWidth.value * 9 / 16).dp
         // The details and the single video view occupy distinct layers.
         val detailsVisible by remember { derivedStateOf { motion.morph < 1f / 1.45f } }
-        val detailScroll = rememberScrollState()
-        LaunchedEffect(url) { detailScroll.scrollTo(0) }
+        val detailScroll = rememberLazyListState()
+        LaunchedEffect(url) { detailScroll.scrollToItem(0) }
+        LaunchedEffect(url, info, detailScroll, recommendations.size) {
+            val query = info?.name.orEmpty().trim()
+            if (query.isEmpty()) return@LaunchedEffect
+            snapshotFlow { detailScroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }.collect { index ->
+                if (index < recommendations.size - 4 || exhausted || loadingMore) return@collect
+                loadingMore = true
+                try {
+                    val page = withContext(Dispatchers.IO) {
+                        val service = ServiceList.YouTube.serviceId
+                        val token = continuation
+                        if (!searched) {
+                            val result = ExtractorHelper.searchFor(service, query, emptyList(), emptyList()).blockingGet()
+                            result.relatedItems to result.nextPage
+                        } else if (Page.isValid(token)) {
+                            val result = ExtractorHelper.getMoreSearchItems(service, query, emptyList(), emptyList(), token).blockingGet()
+                            result.items to result.nextPage
+                        } else emptyList<org.schabi.newpipe.extractor.InfoItem>() to null
+                    }
+                    searched = true
+                    continuation = page.second
+                    exhausted = !Page.isValid(page.second)
+                    more += page.first.filterIsInstance<StreamInfoItem>()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    exhausted = true
+                } finally {
+                    loadingMore = false
+                }
+            }
+        }
         if (!fullscreen && detailsVisible) {
             Box(Modifier.fillMaxSize().graphicsLayer {
                 alpha = (1 - 1.45f * motion.morph.coerceIn(0f, 1f)).coerceAtLeast(0f)
             }.background(p.bg))
-            Column(Modifier.fillMaxSize().graphicsLayer {
+            LazyColumn(Modifier.fillMaxSize().graphicsLayer {
                 val t = motion.morph.coerceIn(0f, 1f)
                 alpha = (1 - 1.45f * t).coerceAtLeast(0f)
                 translationY = t * 90 * density
-            }.padding(top = fullHeight)
-                .verticalScroll(detailScroll, enabled = detailsTouchable)
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 144.dp),
+            }.padding(top = fullHeight),
+                state = detailScroll, userScrollEnabled = detailsTouchable,
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 144.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                item {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Column(Modifier.watchClick(detailsTouchable) { overlay("Description") }) {
                     FeedText(info?.name ?: title, 17, p.text, FontWeight.Bold)
                     FeedText("${info?.viewCount?.takeIf { it >= 0 } ?: "—"} views  •  …more", 12, p.muted)
                 }
-                FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
+                    if (info != null) WatchPill("Subscribe", p.onAccent, p.accent, enabled = detailsTouchable) {
+                        overlay("Sign in to continue")
+                    }
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WatchPill("Like", p.text, p.elevated, enabled = detailsTouchable) { overlay("Sign in to continue") }
+                    WatchPill("Dislike", p.text, p.elevated, enabled = detailsTouchable) { overlay("Sign in to continue") }
                     WatchPill("Float", p.accent, p.accentSoft, enabled = detailsTouchable) { onCompact(true) }
                     WatchPill("Share", p.text, p.elevated, enabled = detailsTouchable) { overlay("Share") }
                 }
@@ -117,12 +190,20 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     FeedText("Comments", 12, p.text, FontWeight.Bold)
                 }
                 FeedText("UP NEXT", 12, p.muted, FontWeight.Bold)
-                info?.relatedItems.orEmpty().filterIsInstance<StreamInfoItem>().take(25).forEach { item ->
+                }
+                }
+                items(recommendations, key = { it.url }) { item ->
                     Row(Modifier.fillMaxWidth().watchClick(detailsTouchable) { playNext(item.url, item.name) },
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         NetImage(item.thumbnailUrl, Modifier.width(144.dp).aspectRatio(16f / 9))
-                        FeedText(item.name, 12, p.text, FontWeight.SemiBold)
+                        Column {
+                            FeedText(item.name, 12, p.text, FontWeight.SemiBold)
+                            FeedText(item.uploaderName.orEmpty(), 11, p.muted)
+                        }
                     }
+                }
+                if (loadingMore) items(3) {
+                    Spacer(Modifier.fillMaxWidth().height(81.dp).background(p.elevated, RoundedCornerShape(12.dp)))
                 }
             }
         }
@@ -201,8 +282,12 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                         if (fullscreen) onFullscreen(false) else onCompact(true)
                     }
                 }
-                Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                    WatchPill(formatSpeed(speed), Color.White, Color.Black.copy(alpha = .55f)) { overlay("Playback speed") }
+                Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    WatchPill(if (autoplay) "▶" else "Ⅱ", Color.White,
+                        if (autoplay) p.accent else Color.Black.copy(alpha = .55f), "Autoplay", click = toggleAutoplay)
+                    if (playback.subtitles.isNotEmpty()) WatchPill("CC", Color.White,
+                        if (captionsOn) p.accent else Color.Black.copy(alpha = .55f), "Captions", click = toggleCaptions)
+                    WatchPill("⚙", Color.White, Color.Black.copy(alpha = .55f), "Player settings") { overlay("Player settings") }
                 }
                 if (seekCount == 0) Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     if (fullscreen) WatchPill("↶ 10", Color.White, Color.Black.copy(alpha = .55f)) { seek(-1) }
@@ -215,6 +300,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         BasicText("${formatTime(playback.positionMs / 1000)} / ${formatTime(playback.durationMs / 1000)}",
                             style = TextStyle(color = Color.White, fontSize = 10.sp))
+                        WatchPill(formatSpeed(speed), Color.White, Color.Transparent) { overlay("Player settings") }
                         WatchPill("⛶", Color.White, Color.Transparent,
                             if (fullscreen) "Exit fullscreen" else "Fullscreen") { onFullscreen(!fullscreen) }
                     }
@@ -240,6 +326,25 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 Box(Modifier.align(Alignment.TopEnd).padding(6.dp)
                     .then(if (BuildConfig.DEBUG) Modifier.testTag("player_close") else Modifier)) {
                     WatchPill("×", Color.White, Color.Black.copy(alpha = .8f), "Close player", click = close)
+                }
+            }
+            if (playback.caption.isNotEmpty() && !miniVisual) {
+                BasicText(playback.caption,
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = if (controls) 64.dp else 12.dp)
+                        .background(Color.Black.copy(alpha = .75f), RoundedCornerShape(4.dp)).padding(4.dp),
+                    style = TextStyle(color = Color.White, fontSize = if (fullscreen) 18.sp else 13.sp))
+            }
+            if (playback.ended && !miniVisual) {
+                Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .85f)),
+                    verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (autoplay && next != null && !autoplayCancelled) {
+                        FeedText("Up next · $countdown", 14, Color.White, FontWeight.Bold)
+                        FeedText(next.name, 14, Color.White)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WatchPill("Cancel", p.text, p.elevated) { autoplayCancelled = true }
+                            WatchPill("Play now", p.onAccent, p.accent) { playNext(next.url, next.name) }
+                        }
+                    } else WatchPill("Replay", p.onAccent, p.accent, click = engine::replay)
                 }
             }
             if (seekCount > 0 && !miniVisual) {

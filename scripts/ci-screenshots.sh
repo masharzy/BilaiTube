@@ -66,8 +66,21 @@ adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action fullscr
 sleep 2
 dump_ui "$out/fullscreen_landscape.xml" player_surface
 adb exec-out screencap -p > "$out/fullscreen_landscape.png"
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_settings
+sleep 1
+dump_ui "$out/fullscreen_settings_drawer.xml" 'Player settings'
+adb exec-out screencap -p > "$out/fullscreen_settings_drawer.png"
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action exit_fullscreen
 sleep 2
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_settings
+sleep 1
+dump_ui "$out/settings_portrait.xml" 'Player settings'
+adb exec-out screencap -p > "$out/settings_portrait.png"
+adb shell input keyevent BACK
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_comments
+sleep 1
+adb exec-out screencap -p > "$out/comments_open.png"
+adb shell input keyevent BACK
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_desc
 sleep 1
 adb exec-out screencap -p > "$out/12_desc_sheet.png"

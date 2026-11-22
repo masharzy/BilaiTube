@@ -6,6 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.C
+import com.google.android.exoplayer2.trackselection.TrackSelectionOverride
 import org.schabi.newpipe.BuildConfig
 import androidx.core.content.ContextCompat
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
@@ -35,6 +37,10 @@ internal data class PlaybackState(
     val durationMs: Long = 0,
     val bufferedPercent: Int = 0,
     val error: Boolean = false,
+    val ended: Boolean = false,
+    val caption: String = "",
+    val subtitles: List<String> = emptyList(),
+    val qualities: List<Int> = emptyList(),
 )
 
 internal interface PlaybackEngine {
@@ -45,6 +51,10 @@ internal interface PlaybackEngine {
     fun togglePlay()
     fun seekTo(ms: Long)
     fun setSpeed(speed: Float)
+    fun setQuality(height: Int?)
+    fun setCaptions(language: String?)
+    fun setLoop(enabled: Boolean)
+    fun replay()
     fun stop()
     fun detach()
 }
@@ -58,12 +68,64 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
     private var surface: TextureView? = null
     private var connected: Player? = null
     private var sample: ExoPlayer? = null
+    private val activePlayer get() = sample ?: connected?.bilaiPlayback
+    private var captionLanguage: String? = null
+    private var loop = false
+    private var requestedSpeed = 1f
+
+    override fun setQuality(height: Int?) {
+        val player = activePlayer ?: return
+        val parameters = player.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+        if (height != null) {
+            for (group in player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }) {
+                val index = (0 until group.length).firstOrNull { group.getTrackFormat(it).height == height }
+                if (index != null) {
+                    parameters.setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                    break
+                }
+            }
+        }
+        player.trackSelectionParameters = parameters.build()
+    }
+
+    override fun setCaptions(language: String?) {
+        captionLanguage = language
+        val player = activePlayer ?: return
+        val parameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, language == null)
+        if (language != null) parameters.setPreferredTextLanguage(language)
+        player.trackSelectionParameters = parameters.build()
+    }
+
+    override fun setLoop(enabled: Boolean) {
+        loop = enabled
+        activePlayer?.repeatMode = if (enabled) ExoPlayer.REPEAT_MODE_ONE else ExoPlayer.REPEAT_MODE_OFF
+    }
+
+    override fun replay() {
+        activePlayer?.apply { seekTo(0); play() }
+    }
+
+    private fun trackState(state: PlaybackState, player: ExoPlayer): PlaybackState {
+        val groups = player.currentTracks.groups
+        return state.copy(
+            ended = player.playbackState == ExoPlayer.STATE_ENDED,
+            caption = if (captionLanguage == null) "" else
+                player.currentCues.cues.mapNotNull { it.text }.joinToString("\n"),
+            subtitles = groups.filter { it.type == C.TRACK_TYPE_TEXT }.flatMap { group ->
+                (0 until group.length).mapNotNull { group.getTrackFormat(it).language }
+            }.distinct(),
+            qualities = groups.filter { it.type == C.TRACK_TYPE_VIDEO }.flatMap { group ->
+                (0 until group.length).map { group.getTrackFormat(it).height }.filter { it > 0 }
+            }.distinct().sortedDescending(),
+        )
+    }
     private val main = Handler(Looper.getMainLooper())
     private val pollSample = object : Runnable {
         override fun run() {
             val player = sample ?: return
-            playback.value = PlaybackState(player.isPlaying, player.currentPosition,
-                player.duration.coerceAtLeast(0), player.bufferedPercentage, player.playerError != null)
+            playback.value = trackState(PlaybackState(player.isPlaying, player.currentPosition,
+                player.duration.coerceAtLeast(0), player.bufferedPercentage, player.playerError != null), player)
             main.postDelayed(this, 200)
         }
     }
@@ -112,7 +174,10 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
 
     override fun togglePlay() { sample?.let { it.playWhenReady = !it.playWhenReady } ?: connected?.playPause() }
     override fun seekTo(ms: Long) { sample?.seekTo(ms) ?: connected?.seekTo(ms) }
-    override fun setSpeed(speed: Float) { sample?.setPlaybackSpeed(speed) ?: connected?.setPlaybackSpeed(speed) }
+    override fun setSpeed(speed: Float) {
+        requestedSpeed = speed
+        sample?.setPlaybackSpeed(speed) ?: connected?.setPlaybackSpeed(speed)
+    }
 
     override fun stop() {
         request.set(null)
@@ -138,14 +203,20 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
     override fun onServiceDisconnected() { connected = null }
     override fun onServiceStopped() { connected = null; playback.value = PlaybackState() }
     override fun onQueueUpdate(queue: PlayQueue) = Unit
-    override fun onMetadataUpdate(info: StreamInfo, queue: PlayQueue) { metadata.value = info }
+    override fun onMetadataUpdate(info: StreamInfo, queue: PlayQueue) {
+        metadata.value = info
+        setCaptions(captionLanguage)
+        setLoop(loop)
+        setSpeed(requestedSpeed)
+    }
     override fun onPlaybackUpdate(state: PlayerPlaybackState, repeatMode: RepeatMode, shuffled: Boolean,
                                   parameters: PlayerPlaybackParameters) {
-        playback.value = playback.value.copy(playing = connected?.isPlaying == true)
+        playback.value = playback.value.copy(playing = connected?.isPlaying == true, ended = state.isCompleted)
     }
     override fun onProgressUpdate(currentProgress: Int, duration: Int, bufferPercent: Int) {
-        playback.value = playback.value.copy(positionMs = currentProgress.toLong(),
+        val snapshot = playback.value.copy(positionMs = currentProgress.toLong(),
             durationMs = duration.coerceAtLeast(0).toLong(), bufferedPercent = bufferPercent)
+        playback.value = activePlayer?.let { trackState(snapshot, it) } ?: snapshot
     }
     override fun onFullscreenStateChanged(fullscreen: Boolean) = Unit
     override fun onMoreOptionsLongClicked() = Unit

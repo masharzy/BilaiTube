@@ -82,10 +82,34 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var video by mutableStateOf<Pair<String, String>?>(null)
     private var compact by mutableStateOf(false)
     private var playbackSpeed by mutableFloatStateOf(1f)
+    private var captions by mutableStateOf<String?>(null)
+    private var preferredCaption: String? = null
+    private var quality by mutableStateOf<Int?>(null)
+    private var loopVideo by mutableStateOf(false)
+    private var autoplay by mutableStateOf(true)
+    private var settingsPage by mutableStateOf("Player settings")
+
+    private fun toggleAutoplay() {
+        autoplay = !autoplay
+        prefs.edit().putBoolean("autoplay", autoplay).apply()
+    }
+
+    private fun chooseCaptions(language: String?) {
+        captions = language
+        if (language != null) preferredCaption = language
+        engine.setCaptions(language)
+        toast = if (language == null) "Captions off" else "Captions on · $language"
+    }
+
+    private fun toggleCaptions() {
+        if (captions != null) chooseCaptions(null)
+        else (preferredCaption?.takeIf { it in engine.state.value.subtitles }
+            ?: engine.state.value.subtitles.firstOrNull())?.let(::chooseCaptions)
+    }
     private var fullscreen by mutableStateOf(false)
     private var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
-    private fun setFullscreen(enabled: Boolean) {
+    private fun requestFullscreen(enabled: Boolean) {
         if (enabled == fullscreen || video == null) return
         if (enabled) previousOrientation = activity.requestedOrientation
         fullscreen = enabled
@@ -104,11 +128,11 @@ class BilaiShell(private val activity: ComponentActivity) {
     private val debugReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getStringExtra("bt.action")) {
-                "fullscreen" -> setFullscreen(true)
-                "exit_fullscreen" -> setFullscreen(false)
+                "fullscreen" -> requestFullscreen(true)
+                "exit_fullscreen" -> requestFullscreen(false)
                 "open_comments" -> if (video != null) overlay = "Comments"
-                "open_settings" -> if (video != null) overlay = "Playback speed"
-                "minimize" -> { setFullscreen(false); compact = true }
+                "open_settings" -> if (video != null) overlay = "Player settings"
+                "minimize" -> { requestFullscreen(false); compact = true }
                 "expand" -> compact = false
                 "open_desc" -> if (video != null) overlay = "Description"
                 "open_menu" -> if (video != null) { menuVideo = null; overlay = "Video options" }
@@ -127,6 +151,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
         if (BuildConfig.DEBUG) ContextCompat.registerReceiver(activity, debugReceiver,
             IntentFilter("com.masharzy.bilaitube.DEBUG_UI"), ContextCompat.RECEIVER_EXPORTED)
+        autoplay = prefs.getBoolean("autoplay", true)
         handleIntent(activity.intent)
     }
 
@@ -146,6 +171,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun play(url: String, title: String) {
+        quality = null
         compact = false
         overlay = null
         video = url to title
@@ -183,7 +209,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         BackHandler(enabled = overlay != null || (video != null && !compact) || tab != Tab.HOME) {
             when {
                 overlay != null -> overlay = null
-                fullscreen -> setFullscreen(false)
+                fullscreen -> requestFullscreen(false)
                 video != null && !compact -> compact = true
                 else -> select(Tab.HOME)
             }
@@ -239,14 +265,17 @@ class BilaiShell(private val activity: ComponentActivity) {
                         BottomNav(tab, ::select)
                     }
                     video?.let { (url, title) ->
-                        Watch(url, title, engine, compact, { compact = it }, fullscreen, ::setFullscreen, playbackSpeed,
-                            close = { setFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
+                        Watch(url, title, engine, compact, { compact = it }, fullscreen, ::requestFullscreen, playbackSpeed,
+                            captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
+                            close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play, overlay = { name ->
                                 if (name == "Share") share(url) else overlay = name
                             })
                     }
                     overlay?.let { name ->
-                        if (name in listOf("Description", "Comments", "Video options")) {
+                        if (name == "Player settings") {
+                            PlayerSettings { overlay = null; settingsPage = "Player settings" }
+                        } else if (name in listOf("Description", "Comments", "Video options", "Sign in to continue")) {
                             WatchSheet(name, { overlay = null })
                         } else Overlay(name, { overlay = null })
                     }
@@ -275,7 +304,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     private fun WatchSheet(name: String, dismiss: () -> Unit) {
         val p = LocalBilaiColors.current
         val info by engine.current.collectAsState()
-        val isMenu = name == "Video options"
+        val isMenu = name == "Video options" || name == "Sign in to continue"
         BoxWithConstraints(Modifier.fillMaxSize()) {
             Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = if (isMenu) .6f else .25f))
                 .clickable(onClick = dismiss))
@@ -297,6 +326,13 @@ class BilaiShell(private val activity: ComponentActivity) {
                             style = TextStyle(color = p.text, fontSize = 12.sp, lineHeight = 18.sp))
                     }
                     "Comments" -> Comments(video?.first.orEmpty())
+                    "Sign in to continue" -> {
+                        FeedText("Like, subscribe and comment need your Google account", 12, p.muted)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WatchPill("Sign in", p.onAccent, p.accent) { overlay = "Sign in" }
+                            WatchPill("Not now", p.text, p.elevated, click = dismiss)
+                        }
+                    }
                     "Video options" -> {
                         val current = menuVideo
                         val url = current?.url ?: video?.first
@@ -332,9 +368,17 @@ class BilaiShell(private val activity: ComponentActivity) {
             onDispose { request.dispose() }
         }
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            WatchPill("Add a comment…", p.text, p.elevated) { overlay = "Sign in to continue" }
             comments.forEach { comment ->
                 FeedText(comment.uploaderName.orEmpty(), 11, p.muted, FontWeight.SemiBold)
-                BasicText(comment.commentText.content, style = TextStyle(color = p.text, fontSize = 12.sp))
+                BasicText(comment.commentText.content, style = TextStyle(color = p.text, fontSize = 13.sp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WatchPill("Like · ${comment.likeCount.coerceAtLeast(0)}", p.text, p.elevated) {
+                        overlay = "Sign in to continue"
+                    }
+                    WatchPill("Dislike", p.text, p.elevated) { overlay = "Sign in to continue" }
+                    WatchPill("Reply", p.text, p.elevated) { overlay = "Sign in to continue" }
+                }
             }
             if (loading) FeedText("Loading comments…", 12, p.muted)
             else if (failed) FeedText("Couldn't load comments.", 12, p.muted)
@@ -356,6 +400,87 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     @Composable
+    private fun PlayerSettings(dismiss: () -> Unit) {
+        val p = LocalBilaiColors.current
+        val state by engine.state.collectAsState()
+        val page = settingsPage
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = if (fullscreen) .55f else .6f))
+                .clickable(onClick = dismiss))
+            Column(Modifier.align(if (fullscreen) Alignment.CenterEnd else Alignment.BottomCenter)
+                .then(if (fullscreen) Modifier.width(minOf(288.dp, maxWidth * .75f)).fillMaxHeight()
+                    else Modifier.fillMaxWidth().heightIn(max = maxHeight * .8f))
+                .background(p.sheetBg, RoundedCornerShape(16.dp)).padding(16.dp)
+                .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    if (page != "Player settings") WatchPill("‹", p.text, p.elevated, "Back") { settingsPage = "Player settings" }
+                    FeedText(page, 14, p.text, FontWeight.Bold)
+                    WatchPill("×", p.text, p.elevated, "Close", click = dismiss)
+                }
+                when (page) {
+                    "Playback speed" -> {
+                        FeedText(formatSpeed(playbackSpeed), 18, p.accent, FontWeight.Bold)
+                        androidx.compose.material3.Slider(
+                            value = playbackSpeed, onValueChange = ::changeSpeed,
+                            valueRange = .25f..4f, steps = 74,
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.elevated))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WatchPill("−", p.text, p.elevated) { changeSpeed(playbackSpeed - .05f) }
+                            WatchPill("+", p.text, p.elevated) { changeSpeed(playbackSpeed + .05f) }
+                        }
+                        for (preset in listOf(.25f, .5f, .75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)) {
+                            MenuRow(if (preset == 1f) "Normal" else formatSpeed(preset),
+                                if (preset == playbackSpeed) "✓" else "") { changeSpeed(preset) }
+                        }
+                    }
+                    "Captions" -> {
+                        MenuRow("Off", if (captions == null) "✓" else "") {
+                            chooseCaptions(null); settingsPage = "Player settings"
+                        }
+                        for (track in state.subtitles) MenuRow(track, if (captions == track) "✓" else "") {
+                            chooseCaptions(track); settingsPage = "Player settings"
+                        }
+                    }
+                    "Quality" -> {
+                        MenuRow("Auto", if (quality == null) "✓" else "") {
+                            quality = null; engine.setQuality(null); settingsPage = "Player settings"
+                        }
+                        for (height in state.qualities) MenuRow("${height}p", if (quality == height) "✓" else "") {
+                            quality = height; engine.setQuality(height); settingsPage = "Player settings"
+                        }
+                    }
+                    else -> {
+                        MenuRow("Autoplay", if (autoplay) "On" else "Off", ::toggleAutoplay)
+                        MenuRow("Captions", captions ?: "Off") { settingsPage = "Captions" }
+                        MenuRow("Quality", quality?.let { "${it}p" } ?: "Auto") { settingsPage = "Quality" }
+                        MenuRow("Playback speed", formatSpeed(playbackSpeed)) { settingsPage = "Playback speed" }
+                        MenuRow("Loop video", if (loopVideo) "On" else "Off") {
+                            loopVideo = !loopVideo; engine.setLoop(loopVideo)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun changeSpeed(value: Float) {
+        playbackSpeed = (value.coerceIn(.25f, 4f) * 20).roundToInt() / 20f
+        engine.setSpeed(playbackSpeed)
+    }
+
+    @Composable
+    private fun MenuRow(title: String, value: String, click: () -> Unit) {
+        val p = LocalBilaiColors.current
+        Row(Modifier.fillMaxWidth().clickable(onClick = click).padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            FeedText(title, 14, p.text)
+            FeedText(value, 13, if (value in listOf("On", "✓")) p.accent else p.muted)
+        }
+    }
+
+    @Composable
     private fun Overlay(name: String, dismiss: () -> Unit) {
         val p = LocalBilaiColors.current
         val info by engine.current.collectAsState()
@@ -365,21 +490,6 @@ class BilaiShell(private val activity: ComponentActivity) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FeedText(name, 14, p.text, FontWeight.Bold)
                 when (name) {
-                    "Playback speed" -> {
-                        var speed by remember { mutableFloatStateOf(playbackSpeed) }
-                        FeedText(formatSpeed(speed), 18, p.accent, FontWeight.Bold)
-                        androidx.compose.material3.Slider(
-                            value = speed,
-                            onValueChange = {
-                                speed = (it * 20).roundToInt() / 20f
-                                playbackSpeed = speed
-                                engine.setSpeed(speed)
-                            },
-                            valueRange = .25f..4f, steps = 74,
-                            colors = androidx.compose.material3.SliderDefaults.colors(
-                                thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.elevated),
-                        )
-                    }
                     "Open Any YouTube URL" -> {
                         FeedText("ভিডিও লিংক এখানে পেস্ট করো", 11, p.muted)
                         BasicTextField(input, { input = it }, singleLine = true,

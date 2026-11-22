@@ -1093,6 +1093,11 @@ public final class Player {
         }
     }
 
+    @Nullable
+    public ExoPlayer getBilaiPlayback() {
+        return simpleExoPlayer;
+    }
+
     public void seekTo(final long positionMillis) {
         transportController.seekTo(positionMillis);
     }
