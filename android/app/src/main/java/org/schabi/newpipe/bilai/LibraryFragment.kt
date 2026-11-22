@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.WatchLater
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
@@ -57,6 +58,9 @@ class LibraryFragment : Fragment() {
                 ) {
                     LibraryRow(Icons.Filled.History, "History") {
                         NavigationHelper.openStatisticFragment(fm)
+                    }
+                    LibraryRow(Icons.Filled.WatchLater, "Watch later") {
+                        WatchLater.open(requireContext(), fm)
                     }
                     LibraryRow(Icons.Filled.PlaylistPlay, "Playlists") {
                         NavigationHelper.openBookmarksFragment(fm)

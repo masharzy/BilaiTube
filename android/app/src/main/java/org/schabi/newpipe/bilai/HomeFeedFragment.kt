@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.preference.PreferenceManager
+import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.info_list.dialog.InfoItemDialog
 import org.schabi.newpipe.util.NavigationHelper
@@ -60,8 +62,13 @@ class HomeFeedFragment : Fragment() {
         }
     }
 
+    private var sessionKey: Int? = null
+
     override fun onResume() {
         super.onResume()
+        val key = (ServiceList.YouTube.tokens ?: "").hashCode()
+        if (sessionKey != null && sessionKey != key) viewModel.restart()
+        sessionKey = key
         viewModel.hideShorts = PreferenceManager.getDefaultSharedPreferences(requireContext())
             .getBoolean(KEY_HIDE_SHORTS, false)
     }
@@ -94,6 +101,7 @@ class HomeFeedFragment : Fragment() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen(
     viewModel: HomeFeedViewModel,

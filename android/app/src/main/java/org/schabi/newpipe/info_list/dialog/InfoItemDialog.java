@@ -327,6 +327,7 @@ public final class InfoItemDialog {
          */
         public Builder addDefaultEndEntries() {
             addAllEntries(
+                    StreamDialogDefaultEntry.WATCH_LATER,
                     StreamDialogDefaultEntry.DOWNLOAD,
                     StreamDialogDefaultEntry.APPEND_PLAYLIST,
                     StreamDialogDefaultEntry.SHARE,

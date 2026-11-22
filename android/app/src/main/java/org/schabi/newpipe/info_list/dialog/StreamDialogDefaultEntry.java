@@ -122,6 +122,9 @@ public enum StreamDialogDefaultEntry {
         )
     ),
 
+    WATCH_LATER(R.string.watch_later_title, (fragment, item) ->
+            org.schabi.newpipe.bilai.WatchLater.INSTANCE.add(fragment.requireContext(), item)),
+
     SHARE(R.string.share, (fragment, item) ->
             ShareUtils.shareText(fragment.requireContext(), item.getName(), item.getUrl(),
                     item.getThumbnailUrl())),

@@ -82,6 +82,18 @@ class HomeFeedViewModel : ViewModel() {
         bootstrap()
     }
 
+    /** The account changed (sign in / out): start over with the new session. */
+    fun restart() {
+        chipList = emptyList()
+        chipTitles = emptyList()
+        allItems = emptyList()
+        rows = emptyList()
+        continuation = null
+        selected = 0
+        started = true
+        bootstrap()
+    }
+
     fun refresh() {
         started = true
         if (chipList.isEmpty()) bootstrap() else loadSource(chipList[selected].source, append = false)
