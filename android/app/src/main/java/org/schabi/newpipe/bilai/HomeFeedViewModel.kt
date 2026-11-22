@@ -169,7 +169,23 @@ class HomeFeedViewModel : ViewModel() {
                     android.util.Log.w("BilaiFeed", "home feed returned no items; chips=" +
                         home.chips.size + ", localization=" + NewPipe.getPreferredLocalization() +
                         ", country=" + NewPipe.getPreferredContentCountry() + "; fallback to search")
-                    useFallback()
+                    // Preserve actual YouTube chip names when the browse response has
+                    // chips but its video renderer is empty (common for guest responses).
+                    if (home.chips.any { it.token != null }) {
+                        chipList = buildList {
+                            add(FeedChip("All", Source.Query("trending videos today")))
+                            home.chips.forEach { chip ->
+                                if (!chip.selected && chip.token != null)
+                                    add(FeedChip(chip.title, Source.Token(chip.token)))
+                            }
+                        }
+                        publishChips()
+                        selected = 0
+                        val page = withContext(Dispatchers.IO) {
+                            searchPage(Source.Query("trending videos today"), null)
+                        }
+                        applyPage(page, append = false)
+                    } else useFallback()
                 }
             } catch (e: CancellationException) {
                 throw e
