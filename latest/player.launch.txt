@@ -4,5 +4,5 @@ Status: ok
 LaunchState: UNKNOWN (0)
 Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
 TotalTime: 0
-WaitTime: 4
+WaitTime: 3
 Complete
