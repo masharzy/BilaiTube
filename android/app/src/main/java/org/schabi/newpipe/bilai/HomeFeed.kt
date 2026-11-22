@@ -168,18 +168,7 @@ internal fun VideoCard(video: StreamInfoItem, progress: Float, open: (String, St
                         lineHeight = 19.94.sp, fontWeight = FontWeight.SemiBold))
                 FeedText(listOfNotNull(video.uploaderName,
                     video.viewCount.takeIf { it >= 0 }?.let { watchCount(it) + " views" },
-                    video.uploadDate?.offsetDateTime()?.let { time ->
-                        val days = java.time.temporal.ChronoUnit.DAYS
-                            .between(time, java.time.OffsetDateTime.now()).coerceAtLeast(0L)
-                        when {
-                            days == 0L -> "Today"
-                            days == 1L -> "1 day ago"
-                            days < 7L -> "$days days ago"
-                            days < 30L -> (days / 7).toString() + " weeks ago"
-                            days < 365L -> (days / 30).toString() + " months ago"
-                            else -> (days / 365).toString() + " years ago"
-                        }
-                    }).joinToString(" • "), 12, p.muted)
+                    watchAge(video.uploadDate)).joinToString(" • "), 12, p.muted)
             }
             BasicText("⋮", Modifier.clickable { menu(video) }.padding(4.dp),
                 style = TextStyle(color = p.text, fontSize = 16.sp))
