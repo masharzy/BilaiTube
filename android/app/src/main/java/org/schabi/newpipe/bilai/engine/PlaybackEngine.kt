@@ -56,6 +56,7 @@ internal interface PlaybackEngine {
     val state: StateFlow<PlaybackState>
     val current: StateFlow<StreamInfo?>
     fun play(url: String, startMs: Long = 0)
+    fun playOffline(uri: Uri)
     fun attachSurface(surface: TextureView?)
     fun togglePlay()
     fun seekTo(ms: Long)
@@ -182,17 +183,11 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         releaseSample()
         playback.value = PlaybackState()
         metadata.value = null
-        if (BuildConfig.DEBUG && (url.startsWith("file://") || url.contains("/sample.mp4"))) {
-            request.set(null)
-            if (holder.isBound) holder.stopService()
-            sample = ExoPlayer.Builder(app).build().apply {
-                setMediaItem(MediaItem.fromUri(url))
-                setVideoTextureView(surface)
-                prepare()
-                seekTo(startMs)
-                playWhenReady = true
-            }
-            main.post(pollSample)
+        val debugFixture = Uri.parse(url)
+        if (BuildConfig.DEBUG && debugFixture.scheme == "file" && debugFixture.authority.isNullOrEmpty()
+            && debugFixture.path in setOf("${app.applicationInfo.dataDir}/sample.mp4",
+                "/data/data/${app.packageName}/sample.mp4")) {
+            playLocal(debugFixture, startMs)
             return
         }
         request.set(ExtractorHelper.getStreamInfo(ServiceList.YouTube.serviceId, url, false)
@@ -205,6 +200,29 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
                 ContextCompat.startForegroundService(app, intent)
                 holder.startService(false, this)
             }, { playback.value = PlaybackState(error = true) }))
+    }
+
+    override fun playOffline(uri: Uri) {
+        if (uri.scheme !in listOf("file", "content")) return
+        releaseSample()
+        metadata.value = null
+        playback.value = PlaybackState()
+        playLocal(uri, 0)
+    }
+
+    private fun playLocal(uri: Uri, startMs: Long) {
+        request.set(null)
+        if (holder.isBound) holder.stopService()
+        sample = ExoPlayer.Builder(app).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            setVideoTextureView(surface)
+            prepare()
+            seekTo(startMs)
+            playWhenReady = true
+        }
+        setSpeed(requestedSpeed)
+        setLoop(loop)
+        main.post(pollSample)
     }
 
     override fun attachSurface(surface: TextureView?) {

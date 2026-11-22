@@ -73,6 +73,18 @@ capture 06_tab_subs true amber subs
 capture 07_tab_you true amber you
 # Start through the regular launcher first so the debug action is delivered to
 # an initialized, foreground activity, even on slower emulator cold starts.
+capture_page() {
+  local name=$1 action=$2 label=$3
+  adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action "$action"
+  dump_ui "$out/$name.xml" "$label"
+  adb exec-out screencap -p > "$out/$name.png"
+  adb shell input keyevent BACK
+}
+capture_page 14_search open_search Search
+capture_page library_history open_history History
+capture_page library_watch_later open_watch_later 'Watch Later'
+capture_page library_playlists open_playlists Playlists
+capture_page library_downloads open_downloads 'Offline Downloads'
 capture 00_player_host true amber home
 adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \

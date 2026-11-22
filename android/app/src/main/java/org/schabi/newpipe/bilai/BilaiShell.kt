@@ -130,12 +130,17 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
     private var overlay by mutableStateOf<String?>(null)
     private var scrollHome by mutableIntStateOf(0)
+    private var browseTarget by mutableStateOf<Pair<String, String>?>(null)
     private var menuVideo by mutableStateOf<StreamInfoItem?>(null)
     private val debugReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getStringExtra("bt.action")) {
                 "fullscreen" -> requestFullscreen(true)
                 "exit_fullscreen" -> requestFullscreen(false)
+                "open_history" -> overlay = "History"
+                "open_watch_later" -> overlay = "Watch Later"
+                "open_playlists" -> overlay = "Playlists"
+                "open_downloads" -> overlay = "Offline Downloads"
                 "open_comments" -> if (video != null) overlay = "Comments"
                 "open_settings" -> if (video != null) overlay = "Player settings"
                 "minimize" -> { requestFullscreen(false); compact = true }
@@ -189,6 +194,23 @@ class BilaiShell(private val activity: ComponentActivity) {
     private fun openVideoMenu(item: StreamInfoItem) {
         menuVideo = item
         overlay = "Video options"
+    }
+
+    private fun openChannel(url: String, title: String) {
+        browseTarget = url to title
+        overlay = "Channel"
+    }
+
+    private fun openPlaylist(url: String, title: String) {
+        browseTarget = url to title
+        overlay = "Remote playlist"
+    }
+
+    private fun openOffline(uri: Uri, title: String) {
+        compact = false
+        overlay = null
+        video = uri.toString() to title
+        engine.playOffline(uri)
     }
 
     private fun openUrl(url: String) {
@@ -263,6 +285,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         Header(
                             home = { homeFeed.select(0); scrollHome++; select(Tab.HOME) },
                             openUrl = { overlay = "Open Any YouTube URL" },
+                            search = { overlay = "Search" },
                             notify = { toast = "No new notifications" },
                         )
                         Box(Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}")) {
@@ -287,6 +310,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                             close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play, overlay = { name ->
                                 when (name) {
+                                    "Channel" -> engine.current.value?.let { info ->
+                                        info.uploaderUrl?.takeIf { it.isNotBlank() }?.let {
+                                            openChannel(it, info.uploaderName.orEmpty())
+                                        }
+                                    }
                                     "Share" -> share(url)
                                     "Download" -> toast = if (engine.download()) "Download started" else "Download unavailable"
                                     else -> overlay = name
@@ -294,7 +322,23 @@ class BilaiShell(private val activity: ComponentActivity) {
                             })
                     }
                     overlay?.let { name ->
-                        if (name == "Player settings") {
+                        if (name == "Search") {
+                            SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist)
+                        } else if (name == "Channel") {
+                            browseTarget?.let { (url, title) ->
+                                ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist) {
+                                    overlay = "Sign in to continue"
+                                }
+                            }
+                        } else if (name == "Remote playlist") {
+                            browseTarget?.let { (url, title) ->
+                                RemotePlaylistPage(url, title, { overlay = "Search" }, ::play)
+                            }
+                        } else if (name in listOf("History", "Watch Later", "Playlists")) {
+                            LibraryPage(name, { overlay = null }, ::play)
+                        } else if (name == "Offline Downloads") {
+                            OfflineDownloads({ overlay = null }, ::openOffline)
+                        } else if (name == "Player settings") {
                             PlayerSettings { overlay = null; settingsPage = "Player settings" }
                         } else if (name in listOf("Description", "Comments", "Video options", "Sign in to continue")) {
                             WatchSheet(name, { overlay = null })
@@ -597,7 +641,7 @@ class BilaiShell(private val activity: ComponentActivity) {
 private fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
 
 @Composable
-private fun Header(home: () -> Unit, openUrl: () -> Unit, notify: () -> Unit) {
+private fun Header(home: () -> Unit, openUrl: () -> Unit, search: () -> Unit, notify: () -> Unit) {
     val p = LocalBilaiColors.current
     Box(Modifier.fillMaxWidth().height(48.dp).background(p.bg)) {
         Row(Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -612,7 +656,7 @@ private fun Header(home: () -> Unit, openUrl: () -> Unit, notify: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 HeaderButton(Glyph.LINK, "Open YouTube URL", "btn_url", p.text, openUrl)
                 HeaderButton(Glyph.BELL, "Notifications", "btn_notifications", p.text, notify, true)
-                HeaderButton(Glyph.SEARCH, "Search", "btn_search", p.text)
+                HeaderButton(Glyph.SEARCH, "Search", "btn_search", p.text, search)
             }
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(1.dp).background(p.border))

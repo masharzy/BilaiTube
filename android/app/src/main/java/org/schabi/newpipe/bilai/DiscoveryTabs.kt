@@ -232,6 +232,7 @@ internal fun YouTab(dark: Boolean, open: (String, String) -> Unit, show: (String
             Column(Modifier.background(p.elevated, RoundedCornerShape(16.dp))) {
                 ProfileRow("Offline Downloads", "") { show("Offline Downloads") }
                 ProfileRow("Watch Later", "") { show("Watch Later") }
+                ProfileRow("Playlists", "") { show("Playlists") }
                 ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF") {
                     skip = !skip; prefs.edit().putBoolean(skipKey, skip).apply()
                 }

@@ -219,7 +219,9 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
+                    Box(Modifier.watchClick(detailsTouchable) { overlay("Channel") }) {
+                        FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
+                    }
                     if (info != null) WatchPill("Subscribe", p.onAccent, p.accent, enabled = detailsTouchable) {
                         overlay("Sign in to continue")
                     }
@@ -360,7 +362,9 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     style = TextStyle(color = Color.White, fontSize = 12.sp))
             }
             if (playback.error) Box(Modifier.align(Alignment.Center)) {
-                WatchPill("Couldn't play. Retry", Color.White, p.elevated) { engine.play(url) }
+                WatchPill("Couldn't play. Retry", Color.White, p.elevated) { val uri = android.net.Uri.parse(url)
+                    if (uri.scheme in listOf("file", "content")) engine.playOffline(uri) else engine.play(url)
+                }
             }
             if (!miniVisual && controls) {
                 Box(Modifier.align(Alignment.TopStart).padding(8.dp)
