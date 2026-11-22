@@ -95,7 +95,7 @@ adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
   --es bt.tab home --ez bt.home_fixture true
 sleep 1
 adb shell input swipe 585 1830 585 760 450
-dump_ui "$out/home_shorts_shelf.xml" "Shorts"
+dump_ui "$out/home_shorts_shelf.xml" "home_shorts_shelf"
 adb exec-out screencap -p > "$out/home_shorts_shelf.png"
 capture 05_tab_shorts true amber shorts
 capture 06_tab_subs true amber subs
