@@ -1,0 +1,3 @@
+--------- beginning of main
+11-22 19:30:10.675  4742  4742 I BilaiPip: Mode changed: true
+11-22 19:30:12.713  4742  4742 I BilaiPip: Mode changed: false
