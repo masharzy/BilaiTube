@@ -1,0 +1,71 @@
+> Task :app:compileDebugKotlin FAILED
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiBrowse.kt:479:85 Classifier 'class YoutubeHomeFeedExtractor : Any' does not have a companion object, so it cannot be used as an expression.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiBrowse.kt:480:72 Unresolved reference 'fetchFeed'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiBrowse.kt:481:46 Unresolved reference 'fetchPlaylist'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:560:37 Mixing named and positional arguments is not allowed unless the order of the arguments matches the order of the parameters.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:560:63 Mixing named and positional arguments is not allowed unless the order of the arguments matches the order of the parameters.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:561:37 Mixing named and positional arguments is not allowed unless the order of the arguments matches the order of the parameters.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:561:56 Unresolved reference 'it'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:561:84 Mixing named and positional arguments is not allowed unless the order of the arguments matches the order of the parameters.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:561:99 Mixing named and positional arguments is not allowed unless the order of the arguments matches the order of the parameters.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:562:37 No value passed for parameter 'like'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:562:37 No value passed for parameter 'dislike'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:562:37 No value passed for parameter 'comments'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:562:37 No value passed for parameter 'subscribe'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/BilaiShell.kt:562:37 No value passed for parameter 'share'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:366:76 Classifier 'class YoutubeHomeFeedExtractor : Any' does not have a companion object, so it cannot be used as an expression.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:372:20 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:373:13 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:373:35 Unresolved reference 'fetchSubscribedChannels'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:373:75 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:373:75 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:373:88 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:375:38 Cannot infer type for value parameter 'index'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:375:45 Cannot infer type for value parameter 'item'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:377:57 Unresolved reference 'name'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:377:74 Unresolved reference 'url'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:378:34 Unresolved reference 'avatar'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:381:20 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:381:50 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:381:72 Unresolved reference 'fetchFeed'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:382:21 Assignment type mismatch: actual type is 'String', but 'List<StreamInfoItem>' was expected.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:382:29 Function invocation 'items(...)' expected.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:383:29 Unresolved reference 'continuation'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:390:20 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:390:50 Cannot infer type for type parameter 'R'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:390:72 Unresolved reference 'fetchContinuation'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:391:21 Assignment type mismatch: actual type is 'List<Serializable>', but 'List<StreamInfoItem>' was expected.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:391:44 Function invocation 'items(...)' expected.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:391:61 Cannot infer type for type parameter 'K'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:391:77 Unresolved reference 'url'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:392:29 Unresolved reference 'continuation'.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:392:43 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/BilaiTube/BilaiTube/android/app/src/main/java/org/schabi/newpipe/bilai/DiscoveryTabs.kt:392:50 Cannot infer type for type parameter 'T'. Specify it explicitly.
+
+1 problem was found storing the configuration cache.
+- Build file 'app/build.gradle': line 306: external process started 'git rev-parse --abbrev-ref HEAD'
+--
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'org.jetbrains.kotlin.android').
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+--
+org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'org.jetbrains.kotlin.android').
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:135)
+	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:288)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:133)
+--
+Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:278)
+	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:132)
+	at org.gradle.internal.Factories$1.create(Factories.java:30)
+--
+Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
+	at org.jetbrains.kotlin.gradle.tasks.TasksUtilsKt.throwExceptionIfCompilationFailed(tasksUtils.kt:21)
+	at org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork.execute(BuildToolsApiCompilationWork.kt:295)
+	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:68)
+--
+BUILD FAILED in 1m 31s
+42 actionable tasks: 19 executed, 23 from cache
+Configuration cache entry stored with 1 problem.
