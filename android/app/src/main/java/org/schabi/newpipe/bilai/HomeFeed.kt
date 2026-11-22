@@ -41,7 +41,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (String, String) -> Unit,
-                      openShorts: () -> Unit, menu: (StreamInfoItem) -> Unit) {
+                      openShorts: (String?) -> Unit, menu: (StreamInfoItem) -> Unit) {
     val p = LocalBilaiColors.current
     LaunchedEffect(model) { model.start() }
     val rows = model.rows
@@ -109,14 +109,14 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween) {
                             FeedText("ϟ  Shorts", 14, p.accent, FontWeight.Bold)
-                            BasicText("View all", Modifier.clickable(onClick = openShorts),
+                            BasicText("View all", Modifier.clickable { openShorts(null) },
                                 style = TextStyle(color = p.accent, fontSize = 12.sp))
                         }
                         LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             itemsIndexed(row.items) { _, short ->
                                 Box(Modifier.width(144.dp).aspectRatio(9f / 15).clip(RoundedCornerShape(12.dp))
-                                    .clickable { openShorts() }) {
+                                    .clickable { openShorts(short.url) }) {
                                     NetImage(short.thumbnailUrl, Modifier.fillMaxSize())
                                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()
                                         .background(Color.Black.copy(alpha = .8f)).padding(8.dp)) {

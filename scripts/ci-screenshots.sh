@@ -55,7 +55,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 nodes = {node.get("resource-id"): node for node in ET.parse(sys.argv[1]).iter("node")}
-for tag in ("tab_home", "tab_shorts", "tab_subs", "tab_you", "btn_theme", "btn_accent", "btn_search"):
+for tag in ("tab_home", "tab_shorts", "tab_subs", "tab_you", "btn_url", "btn_search"):
     assert tag in nodes, f"Missing Compose hook: {tag}"
 active = "tab_" + sys.argv[2]
 assert nodes[active].get("selected") == "true", f"Expected selected tab: {active}"

@@ -73,6 +73,8 @@ class HomeFeedViewModel : ViewModel() {
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    var shortItems by mutableStateOf<List<StreamInfoItem>>(emptyList())
+        private set
     val watched = mutableStateMapOf<String, Float>()
 
     var hideShorts: Boolean = false
@@ -273,6 +275,7 @@ class HomeFeedViewModel : ViewModel() {
 
     private fun rebuildRows() {
         val result = ArrayList<FeedRow>()
+        shortItems = allItems.filter { it.isShortFormContent }
         val shorts = ArrayList<StreamInfoItem>()
         for (item in allItems) {
             if (item.isShortFormContent) {
