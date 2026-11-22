@@ -105,7 +105,7 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
             } }, contentType = { _, row -> row is FeedRow.Shorts }) { _, row ->
                 when (row) {
                     is FeedRow.Video -> VideoCard(row.item, model.watched[row.item.url] ?: 0f, open, menu)
-                    is FeedRow.Shorts -> Column(Modifier.padding(vertical = 12.dp)) {
+                    is FeedRow.Shorts -> Column(Modifier.padding(vertical = 12.dp).debugTag("home_shorts_shelf")) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween) {
                             FeedText("ϟ  Shorts", 14, p.accent, FontWeight.Bold)
