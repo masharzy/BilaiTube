@@ -1,5 +1,9 @@
 package org.schabi.newpipe.bilai
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.animation.togetherWith
 import android.content.Context
 import android.content.pm.ActivityInfo
 import androidx.core.view.WindowInsetsCompat
@@ -449,10 +453,10 @@ class BilaiShell(private val activity: ComponentActivity) {
             }
             SideEffect {
                 val window = activity.window
-                window.statusBarColor = colors.bg.toArgb()
+                window.statusBarColor = if (tab == Tab.SHORTS && video == null) android.graphics.Color.BLACK else colors.bg.toArgb()
                 window.navigationBarColor = if (tab == Tab.SHORTS) android.graphics.Color.BLACK else colors.surface.toArgb()
                 WindowCompat.getInsetsController(window, view).apply {
-                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightStatusBars = !dark && !(tab == Tab.SHORTS && video == null)
                     isAppearanceLightNavigationBars = !dark && tab != Tab.SHORTS
                 }
             }
@@ -462,7 +466,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                 Box(Modifier.then(if (videoOnly) Modifier else Modifier.widthIn(max = 430.dp).heightIn(max = 880.dp)).fillMaxSize()
                     .background(colors.bg)) {
                     if (!videoOnly) Column(Modifier.fillMaxSize()) {
-                        Header(
+                        if (tab != Tab.SHORTS) Header(
                             home = { homeFeed.select(0); scrollHome++; select(Tab.HOME) },
                             openUrl = { overlay = "Open Any YouTube URL" },
                             search = { overlay = "Search" },
@@ -477,8 +481,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 }, ::openVideoMenu)
                                 Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, debugShorts,
                                     { react(Reaction.LIKE) }, { react(Reaction.DISLIKE) },
-                                    { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share)
-                                Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu, fixture = BuildConfig.DEBUG && fixtureSubs)
+                                    { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share,
+                                    search = { overlay = "Search" })
+                                Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu, fixture = BuildConfig.DEBUG && fixtureSubs,
+                                    explore = { overlay = "Search" }, channelPage = ::openChannel,
+                                    openShort = { url -> initialShortUrl = url; select(Tab.SHORTS) })
                                 Tab.YOU -> YouTab(dark, red, BuildConfig.DEBUG && fixtureYou,
                                     signedIn || (BuildConfig.DEBUG && fixtureSignedIn),
                                     if (BuildConfig.DEBUG && fixtureSignedIn) "devforge@example.com" else accountEmail,
@@ -489,7 +496,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 }
                             }
                         }
-                        BottomNav(tab, ::select)
+                        if (tab == Tab.SHORTS) BilaiTheme(true, red) { BottomNav(tab, ::select) }
+                        else BottomNav(tab, ::select)
                     }
                     video?.let { (url, title) ->
                         val metadata by engine.current.collectAsState()
@@ -516,7 +524,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     "Subscribe" -> metadata?.uploaderUrl?.let(::subscribeTo)
                                     "Sign in to continue" -> accountAction()
                                     "Share" -> share(url)
-                                    "Download" -> toast = if (engine.download()) "Download started" else "Download unavailable"
+                                    "Download" -> overlay = "Download picker"
                                     else -> overlay = name
                                 }
                             })
@@ -554,6 +562,15 @@ class BilaiShell(private val activity: ComponentActivity) {
                             LibraryPage(name, { overlay = null }, ::play)
                         } else if (name == "Offline Downloads") {
                             OfflineDownloads({ overlay = null }, ::openOffline)
+                        } else if (name == "Download picker") {
+                            val current by engine.current.collectAsState()
+                            val options = remember(current) {
+                                runCatching { engine.downloadOptions() }.getOrDefault(emptyList())
+                            }
+                            DownloadPickerSheet(current, options, { overlay = null }) { option ->
+                                toast = if (engine.download(option)) "Downloading · ${option.label}"
+                                    else "Already downloaded or unavailable"
+                            }
                         } else if (name == "Player settings") {
                             PlayerSettings { overlay = null; settingsPage = "Player settings" }
                         } else if (name in listOf("Description", "Comments", "Video options", "Sign in to continue")) {
@@ -587,58 +604,86 @@ class BilaiShell(private val activity: ComponentActivity) {
         val info by engine.current.collectAsState()
         val isMenu = name == "Video options" || name == "Sign in to continue"
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = if (isMenu) .6f else .25f))
-                .clickable(onClick = dismiss))
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .then(if (isMenu) Modifier else Modifier.height((maxHeight - maxWidth * 9 / 16).coerceAtLeast(120.dp)))
-                .background(p.sheetBg, RoundedCornerShape(topStart = if (isMenu) 24.dp else 16.dp,
-                    topEnd = if (isMenu) 24.dp else 16.dp))
-                .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val density = LocalDensity.current.density
-                var dragDistance = 0f
-                Row(Modifier.fillMaxWidth().pointerInput(name, density) {
-                    detectVerticalDragGestures(
-                        onDragStart = { dragDistance = 0f },
-                        onDragEnd = { if (dragDistance >= 110 * density) dismiss() },
-                    ) { change, delta -> dragDistance += delta; change.consume() }
-                }, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    FeedText(name, 14, p.text, FontWeight.Bold)
-                    WatchPill("×", p.text, p.elevated, "Close", click = dismiss)
-                }
+            val panelHeight = if (isMenu) null else (maxHeight - maxWidth * 9 / 16).coerceAtLeast(240.dp)
+            AnimatedSheet(dismiss, scrim = if (isMenu) .6f else .3f, topRadius = if (isMenu) 24.dp else 16.dp,
+                fixedHeight = panelHeight) { sheet ->
                 when (name) {
-                    "Description" -> Column(Modifier.verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        FeedText(info?.name ?: video?.second.orEmpty(), 14, p.text, FontWeight.Bold)
-                        BasicText(info?.description?.content.orEmpty(),
-                            style = TextStyle(color = p.text, fontSize = 12.sp, lineHeight = 18.sp))
+                    "Description" -> {
+                        SheetTitle("Description", close = sheet.close)
+                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            BText(info?.name ?: video?.second.orEmpty(), 17f, p.text, FontWeight.Bold, maxLines = 4)
+                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.elevated)
+                                .padding(vertical = 12.dp)) {
+                                StatCell(watchCount(info?.likeCount ?: -1).ifBlank { "—" }, "Likes", Modifier.weight(1f))
+                                StatCell(watchCount(info?.viewCount ?: -1).ifBlank { "—" }, "Views", Modifier.weight(1f))
+                                StatCell(info?.textualUploadDate ?: info?.uploadDate?.offsetDateTime()?.toLocalDate()?.toString()
+                                    ?: "—", "Published", Modifier.weight(1f))
+                            }
+                            BasicText(info?.description?.content.orEmpty().let {
+                                androidx.core.text.HtmlCompat.fromHtml(it, androidx.core.text.HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
+                            }, style = TextStyle(color = p.text, fontSize = 14.sp, lineHeight = 20.sp, fontFamily = BilaiFont))
+                            Spacer(Modifier.height(24.dp))
+                        }
                     }
-                    "Comments" -> Comments((if (tab == Tab.SHORTS) shortsComments else video?.first).orEmpty())
+                    "Comments" -> {
+                        SheetTitle("Comments", close = sheet.close)
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            Comments((if (tab == Tab.SHORTS) shortsComments else video?.first).orEmpty())
+                        }
+                    }
                     "Sign in to continue" -> {
-                        FeedText("Like, subscribe and comment need your Google account", 12, p.muted)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            WatchPill("Sign in", p.onAccent, p.accent) { overlay = "Sign in" }
-                            WatchPill("Not now", p.text, p.elevated, click = dismiss)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(56.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                                MIcon(Icons.Rounded.AccountCircle, p.accent, 32.dp)
+                            }
+                            BText("Sign in to continue", 17f, p.text, FontWeight.Bold)
+                            BText("Like, subscribe and comment need your Google account.", 13f, p.muted, maxLines = 2)
+                            Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(CircleShape).background(p.accent)
+                                .clickable { overlay = "Sign in" }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                BText("Sign in", 14f, p.onAccent, FontWeight.Bold)
+                            }
+                            Box(Modifier.fillMaxWidth().clip(CircleShape).clickable(onClick = sheet.close)
+                                .padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                BText("Not now", 14f, p.text, FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.navigationBarsPadding())
                         }
                     }
                     "Video options" -> {
                         val current = menuVideo
                         val url = current?.url ?: video?.first
-                        if (current != null) WatchPill("Save to Watch Later", p.text, p.elevated) {
-                            WatchLater.add(activity, current)
-                            dismiss()
-                        }
-                        if (current == null && video != null) {
-                            WatchPill("Picture-in-picture", p.text, p.elevated) { enterPictureInPicture() }
-                            WatchPill("Background play", p.text, p.elevated) {
-                                dismiss()
-                                activity.moveTaskToBack(true)
+                        if (current != null) {
+                            SheetRow(Icons.Rounded.WatchLater, "Save to Watch Later") {
+                                WatchLater.add(activity, current); toast = "Saved to Watch Later"; sheet.close()
+                            }
+                            SheetRow(Icons.Rounded.PlayArrow, "Play") { sheet.close(); play(current.url, current.name) }
+                            if (!current.uploaderUrl.isNullOrBlank()) SheetRow(Icons.Rounded.AccountCircle, "Go to channel") {
+                                sheet.close(); openChannel(current.uploaderUrl, current.uploaderName.orEmpty())
                             }
                         }
-                        if (url != null) WatchPill("Share", p.text, p.elevated) { dismiss(); share(url) }
-                        WatchPill("Cancel", p.text, p.elevated, click = dismiss)
+                        if (current == null && video != null) {
+                            SheetRow(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture") { enterPictureInPicture() }
+                            SheetRow(Icons.Rounded.Headphones, "Play in background") {
+                                sheet.close(); activity.moveTaskToBack(true)
+                            }
+                            SheetRow(Icons.Rounded.Download, "Download") { overlay = "Download picker" }
+                        }
+                        if (url != null) SheetRow(Icons.Rounded.Share, "Share") { sheet.close(); share(url) }
+                        Spacer(Modifier.height(8.dp).navigationBarsPadding())
                     }
                 }
             }
+        }
+    }
+
+    @Composable
+    private fun StatCell(value: String, label: String, modifier: Modifier) {
+        val p = LocalBilaiColors.current
+        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            BText(value, 15f, p.text, FontWeight.Bold)
+            BText(label, 11f, p.muted)
         }
     }
 
@@ -776,23 +821,33 @@ class BilaiShell(private val activity: ComponentActivity) {
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = TextStyle(color = p.text, fontSize = 13.sp))
                 if (body.length > 120 || body.count { it == '\n' } > 2) {
-                    WatchPill(if (fullText) "Show less" else "Read more", p.text, p.elevated) { fullText = !fullText }
+                    BText(if (fullText) "Show less" else "Read more", 12f, p.muted, FontWeight.SemiBold,
+                        modifier = Modifier.clickable { fullText = !fullText })
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    WatchPill("Like · ${comment.likeCount.coerceAtLeast(0)}", p.text, p.elevated) {
-                        accountAction()
+                Row(Modifier.offset(x = (-8).dp), verticalAlignment = Alignment.CenterVertically) {
+                    RoundIconButton(Icons.Rounded.ThumbUpOffAlt, "Like", p.text, Color.Transparent, 34.dp, 17.dp,
+                        click = ::accountAction)
+                    if (comment.likeCount > 0) BText(watchCount(comment.likeCount.toLong()), 12f, p.muted)
+                    Spacer(Modifier.width(6.dp))
+                    RoundIconButton(Icons.Rounded.ThumbDownOffAlt, "Dislike", p.text, Color.Transparent, 34.dp, 17.dp,
+                        click = ::accountAction)
+                    Box(Modifier.clip(CircleShape).clickable { onReply(comment.commentId) }
+                        .padding(horizontal = 10.dp, vertical = 8.dp)) {
+                        BText("Reply", 12f, p.text, FontWeight.SemiBold)
                     }
-                    WatchPill("Dislike", p.text, p.elevated, click = ::accountAction)
-                    WatchPill("Reply", p.text, p.elevated) { onReply(comment.commentId) }
-                    if (comment.isHeartedByUploader) FeedText("♥", 12, Color.Red)
+                    if (comment.isHeartedByUploader) MIcon(Icons.Rounded.Favorite, Color(0xFFEF4444), 14.dp, "Hearted")
                 }
                 LocalReplyComposer(replyTo != null && replyTo == comment.commentId, comment.uploaderName.orEmpty(), nested,
                     cancel = { onReply(null) }, submit = submit)
                 val count = comment.replyCount.coerceAtLeast(0) + local.size
                 if (!nested && count > 0) {
-                    WatchPill("$count replies", p.accent, p.accentSoft) {
+                    Row(Modifier.clip(CircleShape).clickable {
                         expanded = !expanded
                         if (expanded && replies.isEmpty()) loadReplies()
+                    }.padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        MIcon(if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, p.accent, 20.dp)
+                        BText("$count ${if (count == 1) "reply" else "replies"}", 13f, p.accent, FontWeight.SemiBold)
                     }
                     AnimatedVisibility(expanded, enter = expandVertically(tween(320)), exit = shrinkVertically(tween(320))) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -862,85 +917,121 @@ class BilaiShell(private val activity: ComponentActivity) {
     @Composable
     private fun PlayerSettings(dismiss: () -> Unit) {
         val p = LocalBilaiColors.current
+        if (fullscreen) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = .55f)).clickable(onClick = dismiss))
+                Column(Modifier.align(Alignment.CenterEnd).width(minOf(320.dp, maxWidth * .6f)).fillMaxHeight()
+                    .background(p.sheetBg).verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                    SettingsContent(dismiss)
+                }
+            }
+        } else AnimatedSheet(dismiss) { sheet ->
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingsContent(sheet.close)
+                Spacer(Modifier.height(8.dp).navigationBarsPadding())
+            }
+        }
+    }
+
+    @Composable
+    private fun SettingsContent(close: () -> Unit) {
+        val p = LocalBilaiColors.current
         val state by engine.state.collectAsState()
         val page = settingsPage
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = if (fullscreen) .55f else .6f))
-                .clickable(onClick = dismiss))
-            Column(Modifier.align(if (fullscreen) Alignment.CenterEnd else Alignment.BottomCenter)
-                .then(if (fullscreen) Modifier.width(minOf(288.dp, maxWidth * .75f)).fillMaxHeight()
-                    else Modifier.fillMaxWidth().heightIn(max = maxHeight * .8f))
-                .background(p.sheetBg, RoundedCornerShape(16.dp)).padding(16.dp)
-                .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    if (page != "Player settings") WatchPill("‹", p.text, p.elevated, "Back") { settingsPage = "Player settings" }
-                    FeedText(page, 14, p.text, FontWeight.Bold)
-                    WatchPill("×", p.text, p.elevated, "Close", click = dismiss)
-                }
-                when (page) {
+        val back = { settingsPage = "Player settings" }
+        androidx.compose.animation.AnimatedContent(page, label = "settings page", transitionSpec = {
+            val forward = targetState != "Player settings"
+            (androidx.compose.animation.slideInHorizontally(tween(240)) { if (forward) it / 3 else -it / 3 } +
+                fadeIn(tween(240))) togetherWith fadeOut(tween(120))
+        }) { current ->
+            Column {
+                when (current) {
                     "Playback speed" -> {
-                        FeedText(formatSpeed(playbackSpeed), 18, p.accent, FontWeight.Bold)
-                        androidx.compose.material3.Slider(
-                            value = playbackSpeed, onValueChange = ::changeSpeed,
-                            valueRange = .25f..4f, steps = 74,
-                            colors = androidx.compose.material3.SliderDefaults.colors(
-                                thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.elevated))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            WatchPill("−", p.text, p.elevated) { changeSpeed(playbackSpeed - .05f) }
-                            WatchPill("+", p.text, p.elevated) { changeSpeed(playbackSpeed + .05f) }
+                        SheetTitle("Playback speed", back = back)
+                        BText(if (playbackSpeed == 1f) "Normal" else formatSpeed(playbackSpeed).replace("0x", "x"),
+                            28f, p.text, FontWeight.ExtraBold,
+                            modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RoundIconButton(Icons.Rounded.Remove, "Slower", p.text, p.elevated, 40.dp, 20.dp) {
+                                changeSpeed(playbackSpeed - .05f)
+                            }
+                            androidx.compose.material3.Slider(
+                                value = playbackSpeed, onValueChange = ::changeSpeed,
+                                valueRange = .25f..4f, steps = 74, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                                colors = androidx.compose.material3.SliderDefaults.colors(
+                                    thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.elevated,
+                                    activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent))
+                            RoundIconButton(Icons.Rounded.Add, "Faster", p.text, p.elevated, 40.dp, 20.dp) {
+                                changeSpeed(playbackSpeed + .05f)
+                            }
                         }
-                        for (preset in listOf(.25f, .5f, .75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)) {
-                            MenuRow(if (preset == 1f) "Normal" else formatSpeed(preset),
-                                if (preset == playbackSpeed) "✓" else "") { changeSpeed(preset) }
-                        }
-                    }
-                    "Captions" -> {
-                        MenuRow("Off", if (captions == null) "✓" else "") {
-                            chooseCaptions(null); settingsPage = "Player settings"
-                        }
-                        for (track in state.subtitles) MenuRow(track, if (captions == track) "✓" else "") {
-                            chooseCaptions(track); settingsPage = "Player settings"
-                        }
-                    }
-                    "Quality" -> {
-                        MenuRow("Auto", if (quality == null) "✓" else "") {
-                            quality = null; engine.setQuality(null); settingsPage = "Player settings"
-                        }
-                        for (height in state.qualities) MenuRow("${height}p", if (quality == height) "✓" else "") {
-                            quality = height; engine.setQuality(height); settingsPage = "Player settings"
-                        }
-                    }
-                    else -> {
-                        Row(Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            FeedText("Autoplay", 14, p.text)
-                            PlayerSwitch(autoplay, "Autoplay", ::toggleAutoplay)
-                        }
-                        MenuRow("Captions", captions ?: "Off") { settingsPage = "Captions" }
-                        MenuRow("Quality", quality?.let { "${it}p" } ?: "Auto") { settingsPage = "Quality" }
-                        MenuRow("Playback speed", formatSpeed(playbackSpeed)) { settingsPage = "Playback speed" }
-                        MenuRow("Picture-in-picture", "") { enterPictureInPicture() }
-                        MenuRow("Background play", "") {
-                            dismiss()
-                            activity.moveTaskToBack(true)
-                        }
-                        Row(Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            FeedText("SponsorBlock", 14, p.text)
-                            PlayerSwitch(sponsorBlock, "SponsorBlock", ::toggleSponsorBlock)
-                        }
-                        Row(Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            FeedText("Loop video", 14, p.text)
-                            PlayerSwitch(loopVideo, "Loop video") {
-                                loopVideo = !loopVideo
-                                engine.setLoop(loopVideo)
+                        androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(listOf(.25f, .5f, .75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f).size) { index ->
+                                val preset = listOf(.25f, .5f, .75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)[index]
+                                val on = kotlin.math.abs(preset - playbackSpeed) < .001f
+                                Box(Modifier.clip(CircleShape).background(if (on) p.accent else p.elevated)
+                                    .clickable { changeSpeed(preset) }.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                                    BText(if (preset == 1f) "Normal" else "${preset}x".replace(".0x", "x"), 13f,
+                                        if (on) p.onAccent else p.text, FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
+                    "Captions" -> {
+                        SheetTitle("Captions", back = back)
+                        CheckRow("Off", captions == null) { chooseCaptions(null); back() }
+                        if (state.subtitles.isEmpty()) BText("No captions for this video", 13f, p.muted,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                        for (track in state.subtitles) CheckRow(java.util.Locale.forLanguageTag(track).displayName
+                            .ifBlank { track }, captions == track) { chooseCaptions(track); back() }
+                    }
+                    "Quality" -> {
+                        SheetTitle("Quality", back = back)
+                        CheckRow("Auto (recommended)", quality == null) { quality = null; engine.setQuality(null); back() }
+                        for (height in state.qualities) CheckRow("${height}p", quality == height) {
+                            quality = height; engine.setQuality(height); back()
+                        }
+                    }
+                    else -> {
+                        SheetTitle("Playback settings", close = close)
+                        SheetRow(Icons.Rounded.PlayCircle, "Autoplay", trailing = { PlayerSwitch(autoplay, "Autoplay", ::toggleAutoplay) },
+                            click = ::toggleAutoplay)
+                        SheetRow(Icons.Rounded.ClosedCaption, "Captions", captions?.let {
+                            java.util.Locale.forLanguageTag(it).displayName.ifBlank { it } } ?: "Off",
+                            trailing = { Chevron() }) { settingsPage = "Captions" }
+                        SheetRow(Icons.Rounded.Tune, "Quality", quality?.let { "${it}p" } ?: "Auto",
+                            trailing = { Chevron() }) { settingsPage = "Quality" }
+                        SheetRow(Icons.Rounded.Speed, "Playback speed",
+                            if (playbackSpeed == 1f) "Normal" else formatSpeed(playbackSpeed),
+                            trailing = { Chevron() }) { settingsPage = "Playback speed" }
+                        SheetRow(Icons.Rounded.FastForward, "SponsorBlock",
+                            trailing = { PlayerSwitch(sponsorBlock, "SponsorBlock", ::toggleSponsorBlock) },
+                            click = ::toggleSponsorBlock)
+                        SheetRow(Icons.Rounded.Repeat, "Loop video", trailing = {
+                            PlayerSwitch(loopVideo, "Loop video") { loopVideo = !loopVideo; engine.setLoop(loopVideo) }
+                        }) { loopVideo = !loopVideo; engine.setLoop(loopVideo) }
+                        SheetRow(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture") { close(); enterPictureInPicture() }
+                        SheetRow(Icons.Rounded.Headphones, "Play in background") { close(); activity.moveTaskToBack(true) }
+                    }
                 }
             }
+        }
+    }
+
+    @Composable
+    private fun Chevron() {
+        Spacer(Modifier.width(6.dp))
+        MIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, LocalBilaiColors.current.muted, 20.dp)
+    }
+
+    @Composable
+    private fun CheckRow(title: String, checked: Boolean, click: () -> Unit) {
+        val p = LocalBilaiColors.current
+        Row(Modifier.fillMaxWidth().clickable(onClick = click).padding(horizontal = 20.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(40.dp)) { if (checked) MIcon(Icons.Rounded.Check, p.accent, 22.dp) }
+            BText(title, 15f, if (checked) p.accent else p.text, if (checked) FontWeight.SemiBold else FontWeight.Normal)
         }
     }
 

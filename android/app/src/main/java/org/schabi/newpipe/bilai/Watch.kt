@@ -76,6 +76,9 @@ import kotlinx.coroutines.launch
 import org.schabi.newpipe.BuildConfig
 import org.schabi.newpipe.bilai.engine.PlaybackEngine
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.ui.graphics.Brush
 
 @Composable
 internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: Boolean,
@@ -451,41 +454,72 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                     style = TextStyle(color = Color.White, fontSize = 12.sp))
             }
-            if (playback.error) Box(Modifier.align(Alignment.Center)) {
-                WatchPill("Couldn't play. Retry", Color.White, p.elevated) { val uri = android.net.Uri.parse(url)
+            if (playback.error && !miniVisual) Box(Modifier.align(Alignment.Center)) {
+                WatchPill("Couldn't play · Tap to retry", Color.White, Color.Black.copy(alpha = .6f)) { val uri = android.net.Uri.parse(url)
                     if (uri.scheme in listOf("file", "content")) engine.playOffline(uri) else engine.play(url)
                 }
             }
-            if (!miniVisual && controls) {
-                Box(Modifier.align(Alignment.TopStart).padding(8.dp)
-                    .then(if (BuildConfig.DEBUG) Modifier.testTag("player_minimize") else Modifier)) {
-                    WatchPill("⌄", Color.White, Color.Black.copy(alpha = .5f), if (fullscreen) "Exit fullscreen" else "Minimize") {
+            val controlsAlpha by animateFloatAsState(if (controls && !miniVisual) 1f else 0f, tween(220),
+                label = "player controls")
+            val fraction = if (!scrub.isNaN()) scrub else if (playback.durationMs <= 0) 0f
+                else (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
+            if (!miniVisual && controlsAlpha > .01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = controlsAlpha }) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f)))
+                if (!fullscreen) Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(40.dp, 4.dp)
+                    .background(Color.White.copy(alpha = .5f), CircleShape))
+                Row(Modifier.align(Alignment.TopStart).fillMaxWidth()
+                    .padding(horizontal = if (fullscreen) 16.dp else 4.dp, vertical = if (fullscreen) 10.dp else 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    RoundIconButton(Icons.Rounded.KeyboardArrowDown, if (fullscreen) "Exit fullscreen" else "Minimize",
+                        Color.White, Color.Transparent, 44.dp, 30.dp,
+                        modifier = if (BuildConfig.DEBUG) Modifier.testTag("player_minimize") else Modifier) {
                         if (fullscreen) onFullscreen(false) else onCompact(true)
                     }
-                }
-                Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (fullscreen) Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                        BText(info?.name ?: title, 15f, Color.White, FontWeight.SemiBold)
+                        BText(info?.uploaderName.orEmpty(), 12f, Color.White.copy(alpha = .7f))
+                    } else Spacer(Modifier.weight(1f))
                     PlayerSwitch(autoplay, "Autoplay", toggleAutoplay)
-                    if (playback.subtitles.isNotEmpty()) WatchPill("CC", Color.White,
-                        if (captionsOn) p.accent else Color.Black.copy(alpha = .55f), "Captions", click = toggleCaptions)
-                    WatchPill("⚙", Color.White, Color.Black.copy(alpha = .55f), "Player settings") { overlay("Player settings") }
+                    Spacer(Modifier.width(6.dp))
+                    RoundIconButton(Icons.Rounded.ClosedCaption, "Captions",
+                        if (captionsOn) p.accent else Color.White, Color.Transparent, 40.dp, 24.dp,
+                        enabled = playback.subtitles.isNotEmpty() || captionsOn, click = toggleCaptions)
+                    RoundIconButton(Icons.Rounded.Settings, "Player settings", Color.White, Color.Transparent,
+                        40.dp, 23.dp) { overlay("Player settings") }
                 }
-                if (seekCount == 0) Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    if (fullscreen) WatchPill("↶ 10", Color.White, Color.Black.copy(alpha = .55f)) { seek(-1) }
-                    WatchPill(if (playback.playing) "Ⅱ" else "▶", Color.White, Color.Black.copy(alpha = .55f),
-                        if (playback.playing) "Pause" else "Play", click = engine::togglePlay)
-                    if (fullscreen) WatchPill("10 ↷", Color.White, Color.Black.copy(alpha = .55f)) { seek(1) }
+                if (seekCount == 0 && !playback.ended) Row(Modifier.align(Alignment.Center),
+                    horizontalArrangement = Arrangement.spacedBy(if (fullscreen) 64.dp else 40.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    RoundIconButton(Icons.Rounded.Replay10, "Back 10 seconds", Color.White,
+                        Color.Black.copy(alpha = .3f), 48.dp, 30.dp) { seek(-1); controls = true }
+                    RoundIconButton(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if (playback.playing) "Pause" else "Play", Color.White, Color.Black.copy(alpha = .4f),
+                        64.dp, 42.dp) { engine.togglePlay(); controls = true }
+                    RoundIconButton(Icons.Rounded.Forward10, "Forward 10 seconds", Color.White,
+                        Color.Black.copy(alpha = .3f), 48.dp, 30.dp) { seek(1); controls = true }
                 }
-                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = .8f))) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .65f))))) {
+                    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
                         val displayedPosition = if (scrubbing) (scrub * playback.durationMs).toLong() else playback.positionMs
-                        BasicText("${formatTime(displayedPosition / 1000)} / ${formatTime(playback.durationMs / 1000)}",
-                            style = TextStyle(color = Color.White, fontSize = 10.sp))
-                        WatchPill(formatSpeed(speed), Color.White, Color.Transparent) { overlay("Player settings") }
-                        WatchPill("⛶", Color.White, Color.Transparent,
-                            if (fullscreen) "Exit fullscreen" else "Fullscreen") { onFullscreen(!fullscreen) }
+                        BasicText(formatTime(displayedPosition / 1000), style = TextStyle(color = Color.White,
+                            fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = BilaiFont))
+                        BasicText(" / " + formatTime(playback.durationMs / 1000), style = TextStyle(
+                            color = Color.White.copy(alpha = .7f), fontSize = 12.sp, fontFamily = BilaiFont))
+                        if (speed != 1f) Box(Modifier.padding(start = 8.dp).clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = .18f)).clickable { overlay("Player settings") }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)) {
+                            BText(formatSpeed(speed).replace(".00x", "x"), 11f, Color.White, FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        RoundIconButton(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                            if (fullscreen) "Exit fullscreen" else "Fullscreen", Color.White, Color.Transparent,
+                            40.dp, 26.dp) { onFullscreen(!fullscreen) }
                     }
-                    Canvas(Modifier.fillMaxWidth().height(20.dp).pointerInput(url, playback.durationMs) {
+                    Canvas(Modifier.fillMaxWidth().height(if (fullscreen) 28.dp else 18.dp)
+                        .padding(horizontal = if (fullscreen) 16.dp else 0.dp)
+                        .pointerInput(url, playback.durationMs) {
                         awaitEachGesture {
                             val down = awaitFirstDown()
                             if (playback.durationMs <= 0 || size.width == 0) return@awaitEachGesture
@@ -507,22 +541,45 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                             }
                         }
                     }) {
-                        val fraction = if (!scrub.isNaN()) scrub else if (playback.durationMs <= 0) 0f
-                            else (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
-                        val start = Offset(0f, center.y)
-                        val end = Offset(size.width, center.y)
-                        val thumb = Offset(size.width * fraction, center.y)
-                        drawLine(Color.White.copy(alpha = .25f), start, end, 4.dp.toPx())
-                        drawLine(Color.White.copy(alpha = .45f), start,
-                            Offset(size.width * playback.bufferedPercent.coerceIn(0, 100) / 100f, center.y), 4.dp.toPx())
-                        drawLine(p.accent, start, thumb, 4.dp.toPx())
-                        drawCircle(p.accent, 6.dp.toPx(), thumb)
+                        val y = if (fullscreen) center.y else size.height - 2.dp.toPx()
+                        val stroke = (if (scrubbing) 5 else 3).dp.toPx()
+                        val start = Offset(0f, y)
+                        val end = Offset(size.width, y)
+                        val thumb = Offset(size.width * fraction, y)
+                        drawLine(Color.White.copy(alpha = .3f), start, end, stroke)
+                        drawLine(Color.White.copy(alpha = .5f), start,
+                            Offset(size.width * playback.bufferedPercent.coerceIn(0, 100) / 100f, y), stroke)
+                        drawLine(p.accent, start, thumb, stroke)
+                        drawCircle(p.accent, (if (scrubbing) 9 else 6).dp.toPx(), thumb)
                     }
                 }
-            } else if (miniVisual) {
-                Box(Modifier.align(Alignment.TopEnd).padding(6.dp)
+            }
+            if (!miniVisual && !fullscreen && controlsAlpha < .99f) Box(Modifier.align(Alignment.BottomStart)
+                .fillMaxWidth().height(2.dp).graphicsLayer { alpha = 1f - controlsAlpha }
+                .background(Color.White.copy(alpha = .25f))) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(p.accent))
+            }
+            if (miniVisual) {
+                // The surface is scaled down in mini mode; counter-scale the controls so they keep their size.
+                fun counterScale(origin: TransformOrigin) = Modifier.graphicsLayer {
+                    val t = motion.morph.coerceIn(0f, 1f)
+                    val s = (1 - t * (1 - motion.miniWidth / motion.width.coerceAtLeast(1f))).coerceAtLeast(.05f)
+                    transformOrigin = origin
+                    scaleX = 1f / s; scaleY = 1f / s
+                }
+                Box(Modifier.align(Alignment.TopEnd).then(counterScale(TransformOrigin(1f, 0f))).padding(4.dp)
                     .then(if (BuildConfig.DEBUG) Modifier.testTag("player_close") else Modifier)) {
-                    WatchPill("×", Color.White, Color.Black.copy(alpha = .8f), "Close player", click = close)
+                    RoundIconButton(Icons.Rounded.Close, "Close player", Color.White, Color.Black.copy(alpha = .7f),
+                        28.dp, 18.dp, click = close)
+                }
+                Box(Modifier.align(Alignment.BottomStart).then(counterScale(TransformOrigin(0f, 1f)))
+                    .padding(start = 4.dp, bottom = 7.dp)) {
+                    RoundIconButton(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if (playback.playing) "Pause" else "Play", Color.White, Color.Black.copy(alpha = .6f),
+                        28.dp, 18.dp, click = engine::togglePlay)
+                }
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = .25f))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(p.accent))
                 }
             }
             if (playback.caption.isNotEmpty() && !miniVisual) {
@@ -549,7 +606,8 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                             WatchPill("Cancel", p.text, p.elevated) { autoplayCancelled = true }
                             WatchPill("Play now", p.onAccent, p.accent) { playNext(next.url, next.name) }
                         }
-                    } else WatchPill("Replay", p.onAccent, p.accent, click = engine::replay)
+                    } else RoundIconButton(Icons.Rounded.Replay, "Replay", Color.White,
+                        Color.White.copy(alpha = .18f), 64.dp, 36.dp, click = engine::replay)
                 }
             }
             if (seekCount > 0 && !miniVisual) {
@@ -568,12 +626,12 @@ internal fun PlayerSwitch(checked: Boolean, label: String, onToggle: () -> Unit)
         animationSpec = tween(260, easing = CubicBezierEasing(.34f, 1.56f, .64f, 1f)),
         label = "player switch",
     )
-    Box(Modifier.size(36.dp, 20.dp).background(if (checked) p.accent else p.elevated, CircleShape)
+    Box(Modifier.size(36.dp, 20.dp).background(if (checked) p.accent else p.muted.copy(alpha = .5f), CircleShape)
         .toggleable(checked, role = Role.Switch, onValueChange = { onToggle() })
         .semantics { contentDescription = label }.padding(2.dp)) {
         Box(Modifier.offset(x = offset.dp).size(16.dp).background(Color.White, CircleShape),
             contentAlignment = Alignment.Center) {
-            FeedText(if (checked) "▶" else "Ⅱ", 8, Color.Black, FontWeight.Bold)
+            MIcon(if (checked) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, Color.Black, 12.dp)
         }
     }
 }

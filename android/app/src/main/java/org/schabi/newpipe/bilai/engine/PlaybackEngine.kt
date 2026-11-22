@@ -53,6 +53,16 @@ internal data class PlaybackState(
     val firstFrame: Boolean = false,
 )
 
+/** One entry of the download picker. [secondary] is the audio track muxed into a video-only stream. */
+internal data class DownloadOption(
+    val label: String,
+    val detail: String,
+    val audioOnly: Boolean,
+    val primary: org.schabi.newpipe.extractor.stream.Stream,
+    val secondary: org.schabi.newpipe.extractor.stream.AudioStream?,
+    val bytes: Long,
+)
+
 internal interface PlaybackEngine {
     val state: StateFlow<PlaybackState>
     val current: StateFlow<StreamInfo?>
@@ -68,6 +78,8 @@ internal interface PlaybackEngine {
     fun setLoop(enabled: Boolean)
     fun replay()
     fun download(): Boolean
+    fun downloadOptions(): List<DownloadOption>
+    fun download(option: DownloadOption): Boolean
     fun stop()
     fun detach()
 }
@@ -122,26 +134,84 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         activePlayer?.apply { seekTo(0); play() }
     }
 
-    override fun download(): Boolean {
+    override fun download(): Boolean = downloadOptions().firstOrNull { !it.audioOnly }?.let(::download) ?: false
+
+    override fun downloadOptions(): List<DownloadOption> {
+        val info = metadata.value ?: return emptyList()
+        val videos = ArrayList(org.schabi.newpipe.util.VideoStreamSelector.getSortedStreamVideosList(
+            app, info.videoStreams, info.videoOnlyStreams, false, false))
+        HlsDownloadStreamHelper.addManifestFallbackIfNeeded(videos, info)
+        val audios = org.schabi.newpipe.util.AudioStreamSelector
+            .filterDownloadableAudioStreams(info.audioStreams.orEmpty())
+        val seconds = info.duration.coerceAtLeast(0)
+        fun estimate(videoBitsPerSecond: Int, audioKbps: Int): Long {
+            val bits = videoBitsPerSecond.coerceAtLeast(0).toLong() + audioKbps.coerceAtLeast(0) * 1000L
+            return if (bits <= 0 || seconds <= 0) 0 else bits * seconds / 8
+        }
+        val options = ArrayList<DownloadOption>()
+        val seen = HashSet<String>()
+        for (video in videos) {
+            val secondary = if (video.isVideoOnly) {
+                org.schabi.newpipe.util.SecondaryStreamHelper.getAudioStreamFor(app,
+                    us.shandian.giga.get.SabrDownloadStreamHelper.audioStreamsForVideo(audios, video), video)
+                    ?.takeIf { us.shandian.giga.get.SabrDownloadStreamHelper.isCompatibleSecondaryStream(video, it) }
+            } else null
+            if (video.isVideoOnly && secondary == null) continue
+            val label = video.resolution?.takeIf { it.isNotBlank() } ?: continue
+            if (!seen.add(label)) continue
+            val format = video.format?.name ?: "MP4"
+            options += DownloadOption(label, format, false, video, secondary,
+                estimate(video.bitrate, secondary?.averageBitrate ?: 0))
+        }
+        val audio = audios.filter { it.format == org.schabi.newpipe.extractor.MediaFormat.M4A }
+            .maxByOrNull { it.averageBitrate } ?: audios.maxByOrNull { it.averageBitrate }
+        if (audio != null) {
+            val kbps = audio.averageBitrate
+            options += DownloadOption("Audio only", (audio.format?.name ?: "AUDIO") +
+                (if (kbps > 0) " · ${kbps} kbps" else ""), true, audio, null, estimate(0, kbps))
+        }
+        return options
+    }
+
+    override fun download(option: DownloadOption): Boolean {
         val info = metadata.value ?: return false
-        val streams = info.videoStreams.filter { it.isUrl &&
-            (it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP || it.deliveryMethod == DeliveryMethod.HLS) }.toMutableList()
-        HlsDownloadStreamHelper.addManifestFallbackIfNeeded(streams, info)
-        val stream = streams.firstOrNull() ?: return false
         val directory = File(app.filesDir, "offline")
         if (!directory.exists() && !directory.mkdirs()) return false
-        val suffix = stream.format?.suffix ?: "mp4"
-        val filename = info.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-        val target = File(directory, "$filename.$suffix")
+        val primary = option.primary
+        val secondary = option.secondary
+        val m4a = primary.format == org.schabi.newpipe.extractor.MediaFormat.M4A
+        val suffix = when {
+            option.audioOnly && m4a -> "m4a"
+            else -> primary.format?.suffix ?: if (option.audioOnly) "m4a" else "mp4"
+        }
+        val safeTitle = info.name.replace(Regex("[\\\\/:*?\"<>|\n\r]"), " ").trim().take(80)
+            .ifBlank { info.id }
+        val target = File(directory, "$safeTitle (${option.label}).$suffix")
         if (target.exists()) return false
+        var psName: String? = when {
+            option.audioOnly && m4a -> us.shandian.giga.postprocessing.Postprocessing.ALGORITHM_M4A_NO_DASH
+            option.audioOnly -> null
+            secondary == null -> null
+            primary.format == org.schabi.newpipe.extractor.MediaFormat.MPEG_4 ->
+                us.shandian.giga.postprocessing.Postprocessing.ALGORITHM_MP4_FROM_DASH_MUXER
+            else -> us.shandian.giga.postprocessing.Postprocessing.ALGORITHM_WEBM_MUXER
+        }
+        val urls = if (secondary == null) arrayOf(primary.content) else arrayOf(primary.content, secondary.content)
+        val recovery = if (secondary == null) arrayOf(MissionRecoveryInfo(primary))
+            else arrayOf(MissionRecoveryInfo(primary), MissionRecoveryInfo(secondary))
+        val methods = HlsDownloadStreamHelper.buildResourceDeliveryMethods(primary, secondary)
+        val manifests = HlsDownloadStreamHelper.buildResourceManifestUrls(primary, secondary)
+        val isUrls = HlsDownloadStreamHelper.buildResourceIsUrls(primary, secondary)
+        val headers = HlsDownloadStreamHelper.buildResourceRequestHeaders(primary, secondary)
+        if (HlsDownloadStreamHelper.containsHlsResource(methods, manifests, urls)
+            || us.shandian.giga.get.SabrDownloadStreamHelper.containsSabrStream(primary, secondary)) {
+            psName = null
+        }
         return try {
-            val storage = StoredFileHelper(app, Uri.fromFile(directory), Uri.fromFile(target), "video")
-            DownloadManagerService.startMission(app, arrayOf(stream.content), storage,
-                'v', 1, info.url, null, null, 0L, arrayOf(MissionRecoveryInfo(stream)),
-                HlsDownloadStreamHelper.buildResourceDeliveryMethods(stream, null),
-                HlsDownloadStreamHelper.buildResourceManifestUrls(stream, null),
-                HlsDownloadStreamHelper.buildResourceIsUrls(stream, null),
-                HlsDownloadStreamHelper.buildResourceRequestHeaders(stream, null))
+            val storage = StoredFileHelper(app, Uri.fromFile(directory), Uri.fromFile(target),
+                if (option.audioOnly) "audio" else "video")
+            DownloadManagerService.startMission(app, urls, storage, if (option.audioOnly) 'a' else 'v',
+                3, info.url, psName, null, option.bytes, recovery, methods, manifests, isUrls, headers)
             true
         } catch (_: java.io.IOException) {
             false
