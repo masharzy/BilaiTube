@@ -1,0 +1,139 @@
+/*
+ * Copyright (C) Eltex ltd 2019 <eltex@eltex-co.ru>
+ * FocusAwareCoordinator.java is part of NewPipe.
+ *
+ * NewPipe is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NewPipe is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NewPipe.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package org.schabi.newpipe.views;
+
+import android.annotation.TargetApi;
+import android.content.Context;
+import android.graphics.Rect;
+import android.os.Build;
+import android.util.AttributeSet;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowInsets;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+
+import org.schabi.newpipe.R;
+
+public final class FocusAwareCoordinator extends CoordinatorLayout {
+    private final Rect childFocus = new Rect();
+    private boolean focusScrollSuppressed = false;
+
+    public FocusAwareCoordinator(@NonNull final Context context) {
+        super(context);
+    }
+
+    public FocusAwareCoordinator(@NonNull final Context context,
+                                 @Nullable final AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public FocusAwareCoordinator(@NonNull final Context context,
+                                 @Nullable final AttributeSet attrs, final int defStyleAttr) {
+        super(context, attrs, defStyleAttr);
+    }
+
+    @Override
+    public void requestChildFocus(final View child, final View focused) {
+        super.requestChildFocus(child, focused);
+
+        if (!isInTouchMode() && !focusScrollSuppressed) {
+            final ViewGroup childGroup = (ViewGroup) child;
+            final View target;
+            if (focused.getHeight() >= getHeight()) {
+                target = focused;
+                focused.getFocusedRect(childFocus);
+            } else {
+                target = (View) focused.getParent();
+                focused.getHitRect(childFocus);
+            }
+            // e.g. a Snackbar's own view gaining focus: the target can be the child itself
+            // or not a descendant of it, which makes offsetDescendantRectToMyCoords throw
+            if (target != childGroup) {
+                if (target == null || !isDescendantOf(target, childGroup)) {
+                    return;
+                }
+                childGroup.offsetDescendantRectToMyCoords(target, childFocus);
+            }
+
+            requestChildRectangleOnScreen(child, childFocus, false);
+        }
+    }
+
+    private static boolean isDescendantOf(final View view, final View ancestor) {
+        View v = view;
+        while (v != null) {
+            if (v == ancestor) {
+                return true;
+            }
+            final android.view.ViewParent p = v.getParent();
+            v = p instanceof View ? (View) p : null;
+        }
+        return false;
+    }
+
+    /**
+     * Stops scrolling to the focused view, for focus which only passes through a view: ViewPager2
+     * clears the focus when it changes pages, and Android gives it to the first focusable view of
+     * the window until it is moved to the new page.
+     *
+     * @param suppressed whether moving the focus must not scroll
+     */
+    public void setFocusScrollSuppressed(final boolean suppressed) {
+        focusScrollSuppressed = suppressed;
+    }
+
+    /**
+     * Applies window insets to all children, not just for the first who consume the insets.
+     * Makes possible for multiple fragments to co-exist. Without this code
+     * the first ViewGroup who consumes will be the last who receive the insets
+     */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    @Override
+    public WindowInsets dispatchApplyWindowInsets(final WindowInsets insets) {
+        boolean consumed = false;
+        for (int i = 0; i < getChildCount(); i++) {
+            final View child = getChildAt(i);
+            final WindowInsets res = child.dispatchApplyWindowInsets(insets);
+            if (res.isConsumed()) {
+                consumed = true;
+            }
+        }
+
+        if (consumed) {
+            insets.consumeSystemWindowInsets();
+        }
+        return insets;
+    }
+
+    /**
+     * Adjusts player's controls manually because fitsSystemWindows doesn't work when multiple
+     * receivers adjust its bounds. So when two listeners are present (like in profile page)
+     * the player's controls will not receive insets. This method fixes it
+     */
+    @Override
+    protected boolean fitSystemWindows(final Rect insets) {
+        final ViewGroup controls = findViewById(R.id.playbackControlRoot);
+        if (controls != null) {
+            controls.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+        }
+        return super.fitSystemWindows(insets);
+    }
+}
