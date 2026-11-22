@@ -11,6 +11,7 @@ adb logcat -c
 adb shell wm size 1170x2532
 adb shell wm density 480
 adb shell settings put system font_scale 1.0
+adb shell settings put secure immersive_mode_confirmations confirmed
 
 dump_ui() {
   local dst=$1 tag=$2 remote=/sdcard/bilai-ui.xml
@@ -19,6 +20,17 @@ dump_ui() {
     if adb shell uiautomator dump "$remote" &&
         adb pull "$remote" "$dst" && grep -q "$tag" "$dst"; then
       return 0
+    fi
+    if [ -s "$dst" ] && grep -q 'android:id/immersive_cling_title' "$dst"; then
+      point=$(python3 - "$dst" <<'PYCODE'
+import re, sys, xml.etree.ElementTree as ET
+for node in ET.parse(sys.argv[1]).iter("node"):
+    if node.get("resource-id") == "android:id/ok":
+        x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+PYCODE
+)
+      if [ -n "$point" ]; then adb shell input tap $point; fi
     fi
     sleep 2
   done

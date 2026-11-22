@@ -9,6 +9,11 @@ import android.content.IntentFilter
 import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -269,7 +274,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                             captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
                             close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play, overlay = { name ->
-                                if (name == "Share") share(url) else overlay = name
+                                when (name) {
+                                    "Share" -> share(url)
+                                    "Download" -> toast = if (engine.download()) "Download started" else "Download unavailable"
+                                    else -> overlay = name
+                                }
                             })
                     }
                     overlay?.let { name ->
@@ -313,8 +322,14 @@ class BilaiShell(private val activity: ComponentActivity) {
                 .background(p.sheetBg, RoundedCornerShape(topStart = if (isMenu) 24.dp else 16.dp,
                     topEnd = if (isMenu) 24.dp else 16.dp))
                 .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
+                val density = LocalDensity.current.density
+                var dragDistance = 0f
+                Row(Modifier.fillMaxWidth().pointerInput(name, density) {
+                    detectVerticalDragGestures(
+                        onDragStart = { dragDistance = 0f },
+                        onDragEnd = { if (dragDistance >= 110 * density) dismiss() },
+                    ) { change, delta -> dragDistance += delta; change.consume() }
+                }, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     FeedText(name, 14, p.text, FontWeight.Bold)
                     WatchPill("×", p.text, p.elevated, "Close", click = dismiss)
                 }
@@ -367,33 +382,90 @@ class BilaiShell(private val activity: ComponentActivity) {
                 }, { loading = false; failed = true }))
             onDispose { request.dispose() }
         }
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            WatchPill("Add a comment…", p.text, p.elevated) { overlay = "Sign in to continue" }
-            comments.forEach { comment ->
-                FeedText(comment.uploaderName.orEmpty(), 11, p.muted, FontWeight.SemiBold)
-                BasicText(comment.commentText.content, style = TextStyle(color = p.text, fontSize = 13.sp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val commentList = rememberLazyListState()
+        val initial = info
+        val continuation = next
+        LaunchedEffect(initial, continuation, commentList, comments.size) {
+            if (initial == null || !Page.isValid(continuation) || failed) return@LaunchedEffect
+            snapshotFlow { commentList.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }.collect { index ->
+                if (index < comments.size - 4 || loading) return@collect
+                loading = true
+                request.set(ExtractorHelper.getMoreCommentItems(ServiceList.YouTube.serviceId, initial, continuation)
+                    .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ page ->
+                        comments = (comments + page.items).distinctBy { it.commentId }
+                        next = page.nextPage
+                        loading = false
+                    }, { loading = false; failed = true }))
+            }
+        }
+        LazyColumn(state = commentList, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { WatchPill("Add a comment…", p.text, p.elevated) { overlay = "Sign in to continue" } }
+            items(comments.distinctBy { it.commentId }, key = { it.commentId }) { comment ->
+                CommentItem(comment, initial)
+            }
+            if (loading) {
+                items(2) { Box(Modifier.fillMaxWidth().height(58.dp).background(p.elevated, RoundedCornerShape(12.dp))) }
+            } else if (failed) item { FeedText("Couldn't load comments.", 12, p.muted) }
+            else if (comments.isEmpty()) item { FeedText("No comments", 12, p.muted) }
+        }
+    }
+
+    @Composable
+    private fun CommentItem(comment: CommentsInfoItem, info: CommentsInfo?, nested: Boolean = false) {
+        val p = LocalBilaiColors.current
+        var expanded by remember(comment.commentId) { mutableStateOf(false) }
+        var fullText by remember(comment.commentId) { mutableStateOf(false) }
+        var replies by remember(comment.commentId) { mutableStateOf<List<CommentsInfoItem>>(emptyList()) }
+        var next by remember(comment.commentId) { mutableStateOf(comment.replies) }
+        var loading by remember(comment.commentId) { mutableStateOf(false) }
+        val request = remember(comment.commentId) { SerialDisposable() }
+        DisposableEffect(request) { onDispose { request.dispose() } }
+        fun loadReplies() {
+            val page = next ?: return
+            if (info == null || loading) return
+            loading = true
+            request.set(ExtractorHelper.getMoreCommentItems(ServiceList.YouTube.serviceId, info, page)
+                .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ result ->
+                    replies = (replies + result.items).distinctBy { it.commentId }
+                    next = result.nextPage
+                    loading = false
+                }, { loading = false }))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            NetImage(comment.uploaderAvatarUrl, Modifier.size(if (nested) 24.dp else 36.dp).clip(CircleShape), avatar = true)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (comment.isPinned) FeedText("Pinned by creator", 11, p.muted)
+                FeedText(listOfNotNull(comment.uploaderName, comment.textualUploadDate).joinToString(" • "),
+                    11, p.muted, FontWeight.SemiBold)
+                val body = comment.commentText.content
+                BasicText(body, maxLines = if (fullText) Int.MAX_VALUE else 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = TextStyle(color = p.text, fontSize = 13.sp))
+                if (body.length > 120 || body.count { it == '\n' } > 2) {
+                    WatchPill(if (fullText) "Show less" else "Read more", p.text, p.elevated) { fullText = !fullText }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     WatchPill("Like · ${comment.likeCount.coerceAtLeast(0)}", p.text, p.elevated) {
                         overlay = "Sign in to continue"
                     }
                     WatchPill("Dislike", p.text, p.elevated) { overlay = "Sign in to continue" }
                     WatchPill("Reply", p.text, p.elevated) { overlay = "Sign in to continue" }
+                    if (comment.isHeartedByUploader) FeedText("♥", 12, Color.Red)
                 }
-            }
-            if (loading) FeedText("Loading comments…", 12, p.muted)
-            else if (failed) FeedText("Couldn't load comments.", 12, p.muted)
-            else if (comments.isEmpty()) FeedText("No comments", 12, p.muted)
-            val initial = info
-            val continuation = next
-            if (initial != null && Page.isValid(continuation) && !loading) {
-                WatchPill("Load more", p.text, p.elevated) {
-                    loading = true
-                    request.set(ExtractorHelper.getMoreCommentItems(ServiceList.YouTube.serviceId, initial, continuation)
-                        .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ page ->
-                            comments = comments + page.items
-                            next = page.nextPage
-                            loading = false
-                        }, { loading = false; failed = true }))
+                if (!nested && comment.replyCount > 0) {
+                    WatchPill("${comment.replyCount} replies", p.accent, p.accentSoft) {
+                        expanded = !expanded
+                        if (expanded && replies.isEmpty()) loadReplies()
+                    }
+                    AnimatedVisibility(expanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            replies.forEach { reply -> CommentItem(reply, info, nested = true) }
+                            if (loading) FeedText("Loading replies…", 12, p.muted)
+                            else if (Page.isValid(next) && replies.isNotEmpty()) {
+                                WatchPill("More replies", p.accent, p.accentSoft, click = ::loadReplies)
+                            }
+                        }
+                    }
                 }
             }
         }

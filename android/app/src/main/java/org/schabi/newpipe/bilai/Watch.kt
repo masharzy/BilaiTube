@@ -1,7 +1,23 @@
 package org.schabi.newpipe.bilai
 
 import android.view.TextureView
+import android.graphics.Matrix
+import android.app.Activity
+import android.content.Context
+import android.media.AudioManager
+import androidx.compose.ui.platform.LocalContext
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -79,11 +95,29 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     }
     val motion = remember { PlayerMotion() }
     val density = LocalDensity.current.density
+    val context = LocalContext.current
+    val window = (context as? Activity)?.window
+    val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    var adjustment by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(adjustment) { if (adjustment != null) { kotlinx.coroutines.delay(800); adjustment = null } }
     val scope = rememberCoroutineScope()
+    val latestPlayback by rememberUpdatedState(playback)
     val pointerCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val matrix = remember { Matrix() }
+    val fitVideo by rememberUpdatedState(fullscreen)
+    fun resizeTexture(view: TextureView) {
+        val state = latestPlayback
+        if (state.videoWidth <= 0 || state.videoHeight <= 0 || view.width <= 0 || view.height <= 0) return
+        val available = view.width.toFloat() / view.height
+        val videoAspect = state.videoWidth.toFloat() / state.videoHeight
+        val ratio = videoAspect / available
+        val x = if (fitVideo) ratio.coerceAtMost(1f) else ratio.coerceAtLeast(1f)
+        val y = if (fitVideo) (1f / ratio).coerceAtMost(1f) else (1f / ratio).coerceAtLeast(1f)
+        matrix.setScale(x, y, view.width / 2f, view.height / 2f)
+        view.setTransform(matrix)
+    }
     var spring by remember { mutableStateOf<Job?>(null) }
     var controls by remember { mutableStateOf(true) }
-    val latestPlayback by rememberUpdatedState(playback)
     var tapJob by remember { mutableStateOf<Job?>(null) }
     var lastTap by remember(url) { mutableLongStateOf(0) }
     var seekSide by remember(url) { mutableIntStateOf(0) }
@@ -92,8 +126,15 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     fun seek(direction: Int) {
         val state = latestPlayback
         if (state.durationMs <= 0) return
-        engine.seekTo((state.positionMs + direction * 10_000L).coerceIn(0, state.durationMs))
-        seekCount = if (seekSide == direction && seekJob?.isActive == true) seekCount + 10 else 10
+        val now = android.os.SystemClock.uptimeMillis()
+        val withinSequence = now - lastSeekAt < 700 && seekJob?.isActive == true
+        val base = if (withinSequence) pendingSeekPosition else state.positionMs
+        pendingSeekPosition = (base + direction * 10_000L).coerceIn(0, state.durationMs)
+        engine.seekTo(pendingSeekPosition)
+        seekCount = if (seekSide == direction && withinSequence) seekCount + 10 else 10
+        lastSeekAt = now
+        seekPoint = finger
+        seekFlash++
         seekSide = direction
         seekJob?.cancel()
         seekJob = scope.launch { kotlinx.coroutines.delay(750); seekCount = 0 }
@@ -184,6 +225,9 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     WatchPill("Dislike", p.text, p.elevated, enabled = detailsTouchable) { overlay("Sign in to continue") }
                     WatchPill("Float", p.accent, p.accentSoft, enabled = detailsTouchable) { onCompact(true) }
                     WatchPill("Share", p.text, p.elevated, enabled = detailsTouchable) { overlay("Share") }
+                    if (info != null) WatchPill("Download", p.text, p.elevated, enabled = detailsTouchable) {
+                        overlay("Download")
+                    }
                 }
                 Box(Modifier.fillMaxWidth().background(p.elevated, RoundedCornerShape(16.dp))
                     .watchClick(detailsTouchable) { overlay("Comments") }.padding(12.dp)) {
@@ -219,8 +263,16 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             clip = true
             shadowElevation = if (clamped > .05f) 16f * clamped * density else 0f
         }.background(Color.Black).then(if (BuildConfig.DEBUG) Modifier.testTag("player_surface") else Modifier)) {
-            AndroidView(factory = { context -> TextureView(context).also(engine::attachSurface) },
-                modifier = Modifier.fillMaxSize())
+            val videoWidth = playback.videoWidth
+            val videoHeight = playback.videoHeight
+            AndroidView(factory = { context ->
+                TextureView(context).also { texture ->
+                    texture.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resizeTexture(texture) }
+                    engine.attachSurface(texture)
+                }
+            }, modifier = Modifier.fillMaxSize(), update = { texture ->
+                if (videoWidth > 0 && videoHeight > 0) resizeTexture(texture)
+            })
             Box(Modifier.fillMaxSize().onGloballyPositioned { pointerCoordinates[0] = it }
                 .pointerInput(url, density, fullscreen) {
                 fun toRoot(position: Offset): Offset {
@@ -229,7 +281,17 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    motion.down()
+                    val isMini = !fullscreen && motion.morph >= .5f
+                    val zone = if (isMini) 0 else when {
+                        down.position.x < size.width * .2f -> -1
+                        down.position.x > size.width * .8f -> 1
+                        else -> 0
+                    }
+                    val canMorph = zone == 0 && (isMini || fullscreen || down.position.y < size.height * .6f)
+                    val startBrightness = window?.attributes?.screenBrightness?.takeIf { it >= 0 } ?: .5f
+                    val maxVolume = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                    val startVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    if (canMorph) motion.down()
                     val tracker = VelocityTracker()
                     val origin = toRoot(down.position)
                     tracker.addPosition(down.uptimeMillis, origin)
@@ -243,24 +305,40 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                         tracker.addPosition(change.uptimeMillis, point)
                         val delta = point - origin
                         if (change.pressed && delta.getDistance() >= 8 * density) {
-                            if (!fullscreen) motion.move(delta.x / density, delta.y / density)
+                            when {
+                                zone < 0 && abs(delta.y) > abs(delta.x) -> {
+                                    val value = (startBrightness - delta.y / size.height).coerceIn(.02f, 1f)
+                                    window?.let { it.attributes = it.attributes.apply { screenBrightness = value } }
+                                    adjustment = "Brightness · ${(value * 100).roundToInt()}%"
+                                }
+                                zone > 0 && abs(delta.y) > abs(delta.x) -> {
+                                    val value = (startVolume - delta.y * maxVolume / size.height)
+                                        .roundToInt().coerceIn(0, maxVolume)
+                                    if (value != audio.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+                                        audio.setStreamVolume(AudioManager.STREAM_MUSIC, value, 0)
+                                    }
+                                    adjustment = "Volume · ${value * 100 / maxVolume}%"
+                                }
+                                canMorph && !fullscreen -> motion.move(delta.x / density, delta.y / density)
+                            }
                             change.consume()
                         }
                     } while (last.pressed)
                     val delta = (point - origin) / density
                     val v = tracker.calculateVelocity()
-                    if ((fullscreen && delta.y >= 14) || (!fullscreen && !motion.minimized && delta.y <= -14)) {
+                    if (canMorph && ((fullscreen && delta.y >= 14) || (!fullscreen && !isMini && delta.y <= -14))) {
                         motion.release(0f, 0f, 0f, 0f)
                         onFullscreen(!fullscreen)
                         return@awaitEachGesture
                     }
-                    if (motion.release(if (fullscreen) 0f else delta.x, if (fullscreen) 0f else delta.y, v.x / density, v.y / density)) close()
+                    if (!canMorph && delta.getDistance() >= 8) return@awaitEachGesture
+                    if (canMorph && motion.release(if (fullscreen) 0f else delta.x, if (fullscreen) 0f else delta.y, v.x / density, v.y / density)) close()
                     else {
                         if (!motion.minimized && (fullscreen || !compact) && delta.getDistance() < 8) {
                             if (last.uptimeMillis - lastTap in 1L..300L && tapJob?.isActive == true) {
                                 tapJob?.cancel()
                                 lastTap = 0
-                                seek(if (down.position.x < size.width / 2) -1 else 1)
+                                seek(if (down.position.x < size.width / 2) -1 else 1, down.position)
                             } else {
                                 lastTap = last.uptimeMillis
                                 tapJob?.cancel()
@@ -272,6 +350,11 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     }
                 }
             })
+            adjustment?.let { label ->
+                BasicText(label, Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = .75f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = TextStyle(color = Color.White, fontSize = 12.sp))
+            }
             if (playback.error) Box(Modifier.align(Alignment.Center)) {
                 WatchPill("Couldn't play. Retry", Color.White, p.elevated) { engine.play(url) }
             }
@@ -348,15 +431,53 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 }
             }
             if (seekCount > 0 && !miniVisual) {
-                Box(Modifier.align(if (seekSide < 0) Alignment.CenterStart else Alignment.CenterEnd)
-                    .fillMaxHeight().fillMaxWidth(.42f).background(Color.White.copy(alpha = .30f), CircleShape),
-                    contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        FeedText(if (seekSide < 0) "◀ ◀ ◀" else "▶ ▶ ▶", 22, Color.White)
-                        FeedText("$seekCount seconds", 13, Color.White, FontWeight.SemiBold)
-                    }
-                }
+                SeekFeedback(seekSide, seekCount, seekFlash, seekPoint)
             }
+
+        }
+    }
+}
+
+@Composable
+private fun SeekFeedback(side: Int, seconds: Int, flash: Int, finger: Offset?) {
+    val fade = remember(side) { Animatable(0f) }
+    val ripple = remember { Animatable(1f) }
+    LaunchedEffect(side) { fade.animateTo(1f, tween(160)) }
+    LaunchedEffect(flash) {
+        ripple.snapTo(0f)
+        ripple.animateTo(1f, tween(550, easing = LinearEasing))
+    }
+    val triangles = remember { List(3) { Path() } }
+    val pulse = rememberInfiniteTransition(label = "seek chevrons").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "phase")
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) {
+            val zone = size.width * .42f
+            val left = side < 0
+            drawOval(Color.White.copy(alpha = .30f * fade.value),
+                topLeft = Offset(if (left) -zone else size.width - zone, 0f),
+                size = Size(zone * 2, size.height))
+            val middle = Offset(if (left) zone * .45f else size.width - zone * .45f, size.height * .44f)
+            val triangleSize = 22.dp.toPx()
+            repeat(3) { i ->
+                val center = middle.x + (i - 1) * triangleSize
+                val phase = (pulse.value + 1f - i / 6f) % 1f
+                val opacity = .2f + .8f * (1f - abs(phase * 2 - 1f))
+                val triangle = triangles[i].apply {
+                    reset()
+                    moveTo(center + side * triangleSize * .4f, middle.y)
+                    lineTo(center - side * triangleSize * .3f, middle.y - triangleSize * .35f)
+                    lineTo(center - side * triangleSize * .3f, middle.y + triangleSize * .35f)
+                    close()
+                }
+                drawPath(triangle, Color.White.copy(alpha = opacity * fade.value))
+            }
+            if (ripple.value < 1f) drawCircle(Color.White.copy(alpha = .28f * (1 - ripple.value)),
+                radius = 30.dp.toPx() * (.3f + 4.7f * ripple.value), center = finger ?: middle)
+        }
+        Box(Modifier.align(if (side < 0) Alignment.CenterStart else Alignment.CenterEnd)
+            .fillMaxWidth(.42f).padding(top = 20.dp), contentAlignment = Alignment.Center) {
+            FeedText("$seconds seconds", 13, Color.White, FontWeight.SemiBold)
         }
     }
 }

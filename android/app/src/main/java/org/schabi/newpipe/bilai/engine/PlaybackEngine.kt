@@ -2,6 +2,13 @@ package org.schabi.newpipe.bilai.engine
 
 import android.content.Context
 import android.view.TextureView
+import android.net.Uri
+import java.io.File
+import org.schabi.newpipe.streams.io.StoredFileHelper
+import us.shandian.giga.get.HlsDownloadStreamHelper
+import us.shandian.giga.get.MissionRecoveryInfo
+import us.shandian.giga.service.DownloadManagerService
+import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import android.os.Handler
 import android.os.Looper
 import com.google.android.exoplayer2.ExoPlayer
@@ -41,6 +48,8 @@ internal data class PlaybackState(
     val caption: String = "",
     val subtitles: List<String> = emptyList(),
     val qualities: List<Int> = emptyList(),
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
 )
 
 internal interface PlaybackEngine {
@@ -55,6 +64,7 @@ internal interface PlaybackEngine {
     fun setCaptions(language: String?)
     fun setLoop(enabled: Boolean)
     fun replay()
+    fun download(): Boolean
     fun stop()
     fun detach()
 }
@@ -106,10 +116,40 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         activePlayer?.apply { seekTo(0); play() }
     }
 
+    override fun download(): Boolean {
+        val info = metadata.value ?: return false
+        val streams = info.videoStreams.filter { it.isUrl &&
+            (it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP || it.deliveryMethod == DeliveryMethod.HLS) }.toMutableList()
+        HlsDownloadStreamHelper.addManifestFallbackIfNeeded(streams, info)
+        val stream = streams.firstOrNull() ?: return false
+        val directory = File(app.filesDir, "offline")
+        if (!directory.exists() && !directory.mkdirs()) return false
+        val suffix = stream.format?.suffix ?: "mp4"
+        val filename = info.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val target = File(directory, "$filename.$suffix")
+        if (target.exists()) return false
+        return try {
+            val storage = StoredFileHelper(app, Uri.fromFile(directory), Uri.fromFile(target), "video")
+            DownloadManagerService.startMission(app, arrayOf(stream.content), storage,
+                'v', 1, info.url, null, null, 0L, arrayOf(MissionRecoveryInfo(stream)),
+                HlsDownloadStreamHelper.buildResourceDeliveryMethods(stream, null),
+                HlsDownloadStreamHelper.buildResourceManifestUrls(stream, null),
+                HlsDownloadStreamHelper.buildResourceIsUrls(stream, null),
+                HlsDownloadStreamHelper.buildResourceRequestHeaders(stream, null))
+            true
+        } catch (_: java.io.IOException) {
+            false
+        } catch (_: IllegalStateException) {
+            false
+        }
+    }
+
     private fun trackState(state: PlaybackState, player: ExoPlayer): PlaybackState {
         val groups = player.currentTracks.groups
         return state.copy(
             ended = player.playbackState == ExoPlayer.STATE_ENDED,
+            videoWidth = player.videoSize.width,
+            videoHeight = player.videoSize.height,
             caption = if (captionLanguage == null) "" else
                 player.currentCues.cues.mapNotNull { it.text }.joinToString("\n"),
             subtitles = groups.filter { it.type == C.TRACK_TYPE_TEXT }.flatMap { group ->
