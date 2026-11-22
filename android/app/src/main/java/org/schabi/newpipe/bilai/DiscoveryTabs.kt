@@ -1,6 +1,11 @@
 package org.schabi.newpipe.bilai
 
 import android.view.TextureView
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,8 +38,13 @@ import androidx.preference.PreferenceManager
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.schedulers.Schedulers
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.R
+import org.schabi.newpipe.NewPipeDatabase
+import org.schabi.newpipe.local.playlist.LocalPlaylistManager
+import us.shandian.giga.service.DownloadManager
+import us.shandian.giga.service.DownloadManagerService
 import org.schabi.newpipe.bilai.engine.PlaybackEngine
 import org.schabi.newpipe.database.subscription.SubscriptionEntity
 import org.schabi.newpipe.extractor.ServiceList
@@ -283,6 +293,37 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
     val historyShown = if (fixtureHistory)
         remember { WatchReviewFixture.stream("fixture").relatedItems.filterIsInstance<StreamInfoItem>().take(4) }
     else recent
+    var laterCount by remember { mutableLongStateOf(0L) }
+    DisposableEffect(context) {
+        val subscription = LocalPlaylistManager(NewPipeDatabase.getInstance(context))
+            .playlists.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
+            .subscribe({ entries ->
+                laterCount = entries.firstOrNull { it.name == WatchLater.NAME }?.streamCount ?: 0L
+            }, {})
+        onDispose { subscription.dispose() }
+    }
+    var downloads by remember { mutableStateOf<DownloadManager?>(null) }
+    var downloadCount by remember { mutableIntStateOf(0) }
+    DisposableEffect(context) {
+        val conn = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                downloads = (binder as? DownloadManagerService.DownloadManagerBinder)?.downloadManager
+            }
+            override fun onServiceDisconnected(name: ComponentName) { downloads = null }
+        }
+        val bound = context.bindService(Intent(context, DownloadManagerService::class.java),
+            conn, Context.BIND_AUTO_CREATE)
+        onDispose { if (bound) context.unbindService(conn) }
+    }
+    LaunchedEffect(downloads) {
+        val iterator = downloads?.iterator ?: return@LaunchedEffect
+        while (true) {
+            iterator.start()
+            iterator.end()
+            downloadCount = iterator.oldListSize
+            delay(2000)
+        }
+    }
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -347,8 +388,8 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
         }
         item {
             Column(Modifier.background(p.elevated, RoundedCornerShape(16.dp))) {
-                ProfileRow("Offline Downloads", "", Glyph.DOWNLOAD) { show("Offline Downloads") }
-                ProfileRow("Watch Later", "", Glyph.CLOCK) { show("Watch Later") }
+                ProfileRow("Offline Downloads", "$downloadCount videos", Glyph.DOWNLOAD) { show("Offline Downloads") }
+                ProfileRow("Watch Later", "$laterCount videos", Glyph.CLOCK) { show("Watch Later") }
                 ProfileRow("Playlists", "", Glyph.HOME) { show("Playlists") }
                 ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF", click = toggleSkip)
                 ProfileRow("Return YouTube Dislike", if (dislike) "ON" else "OFF") {
