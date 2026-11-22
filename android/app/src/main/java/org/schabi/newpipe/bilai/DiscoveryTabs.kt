@@ -294,14 +294,13 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
                     FeedText(if (signedIn) accountEmail ?: "YouTube account" else "Guest Mode", 16, p.text, FontWeight.Bold)
                     FeedText(if (signedIn) "Synced via local SAPISID cookie" else "100% Local SQLite • Zero Server", 12, p.muted)
                 }
-                WatchPill(if (signedIn) "Manage" else "Sign in", p.text, p.elevated) { show(if (signedIn) "Settings" else "Sign in") }
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth().clickable { show("Settings") }.padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                FeedText("Settings", 14, p.text, FontWeight.Bold)
-                FeedText(if (dark) "☾" else "☀", 16, p.muted)
+                WatchPill(if (signedIn) "Manage" else "Sign in", p.text, p.elevated) {
+                    show(if (signedIn) "Settings" else "Sign in")
+                }
+                Box(Modifier.size(32.dp).clip(CircleShape).clickable { show("Settings") },
+                    contentAlignment = Alignment.Center) {
+                    Icon(Glyph.SETTINGS, p.muted, Modifier.size(18.dp))
+                }
             }
         }
         item {
