@@ -1,5 +1,5 @@
 --------- beginning of main
-11-22 19:26:47.308  2376  2376 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
-11-22 19:26:54.750  2607  2607 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
-11-22 19:27:04.937  2791  2791 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
-11-22 19:27:14.726  2973  2973 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 20:01:47.639  2396  2396 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 20:01:57.926  2641  2641 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 20:02:08.754  2805  2805 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 20:02:18.916  2976  2976 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
