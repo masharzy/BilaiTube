@@ -143,6 +143,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var signedIn by mutableStateOf(
         BilaiAccountStore.load(activity) != null,
     )
+    private var accountEmail by mutableStateOf(activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).getString("account_email", null))
 
     fun setPictureInPicture(enabled: Boolean) {
         pip = enabled
@@ -208,6 +209,7 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     private fun refreshAccount() {
         signedIn = BilaiAccountStore.load(activity) != null
+        accountEmail = activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).getString("account_email", null)
         App.reconcileYoutubePlayerClient(activity)
         ServiceHelper.initService(
             activity, ServiceList.YouTube.serviceId,
@@ -215,7 +217,9 @@ class BilaiShell(private val activity: ComponentActivity) {
         LocalDomPoTokenProvider.invalidate()
         InfoCache.getInstance().clearCache()
         homeFeed.restart()
-        overlay = "Settings"
+        overlay = null
+        select(Tab.YOU)
+        toast = if (signedIn) "Google account connected" else "Signed out"
     }
 
     private var fullscreen by mutableStateOf(false)
@@ -280,7 +284,22 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var shortsComments by mutableStateOf<String?>(null)
     private var initialShortUrl by mutableStateOf<String?>(null)
     private var hideShorts by mutableStateOf(prefs.getBoolean("hide_shorts", false))
-    private var red by mutableStateOf(false)
+    private var red by mutableStateOf(prefs.getBoolean("red", false))
+    private var userDark by mutableStateOf(prefs.getBoolean("dark", true))
+    private var fixtureSignedIn by mutableStateOf(false)
+    private var fixtureSubs by mutableStateOf(false)
+    private fun changeDark() {
+        val next = !(debugDark ?: userDark)
+        userDark = next
+        debugDark = null
+        prefs.edit().putBoolean("dark", next).apply()
+        toast = if (next) "Dark Mode" else "Light Mode"
+    }
+    private fun changeAccent() {
+        red = !red
+        prefs.edit().putBoolean("red", red).apply()
+        toast = if (red) "Classic YouTube Red" else "BilaiTube Warm Amber"
+    }
     private var tab by mutableStateOf(Tab.entries.find { it.id == prefs.getString("tab", null) } ?: Tab.HOME)
     private var toast by mutableStateOf<String?>(null, neverEqualPolicy())
 
@@ -354,6 +373,11 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     private fun applyDebugIntent(intent: Intent) {
         if (!BuildConfig.DEBUG) return
+        if (intent.getBooleanExtra("bt.account_signed_fixture", false)) {
+            fixtureSignedIn = true
+            tab = Tab.YOU
+        }
+        if (intent.getBooleanExtra("bt.subs_fixture", false)) fixtureSubs = true
         if (intent.getBooleanExtra("bt.shorts_fixture", false)) {
             val uri = Uri.fromFile(java.io.File(activity.filesDir.parentFile, "sample.mp4")).toString()
             debugShorts = WatchReviewFixture.shorts(uri)
@@ -383,7 +407,7 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     @Composable
     private fun RenderShell() {
-        val dark = debugDark ?: isSystemInDarkTheme()
+        val dark = debugDark ?: userDark
         val videoOnly = fullscreen || pip
         val list = rememberLazyListState()
         LaunchedEffect(hideShorts) { homeFeed.hideShorts = hideShorts }
@@ -427,6 +451,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                             openUrl = { overlay = "Open Any YouTube URL" },
                             search = { overlay = "Search" },
                             notify = { toast = "No new notifications" },
+                            dark = dark, toggleDark = ::changeDark, toggleAccent = ::changeAccent,
                         )
                         Box(Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}")) {
                             when (tab) {
@@ -437,8 +462,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, debugShorts,
                                     { react(Reaction.LIKE) }, { react(Reaction.DISLIKE) },
                                     { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share)
-                                Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu)
-                                Tab.YOU -> YouTab(dark, signedIn, ::play, { overlay = it }, sponsorBlock, ::toggleSponsorBlock, hideShorts) {
+                                Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu, fixture = BuildConfig.DEBUG && fixtureSubs)
+                                Tab.YOU -> YouTab(dark, red, signedIn || (BuildConfig.DEBUG && fixtureSignedIn),
+                                    if (BuildConfig.DEBUG && fixtureSignedIn) "devforge@example.com" else accountEmail,
+                                    ::changeDark, ::changeAccent, ::play, { overlay = it },
+                                    sponsorBlock, ::toggleSponsorBlock, hideShorts) {
                                     hideShorts = !hideShorts
                                     prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
                                 }
@@ -478,7 +506,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                     }
                     overlay?.let { name ->
                         if (name == "Sign in") {
-                            AccountPage({ overlay = "Settings" }, ::refreshAccount)
+                            AccountPage({ overlay = null }, ::refreshAccount)
                         } else if (name == "Settings") {
                             BrowseScreen("Settings", { overlay = null }) {
                                 Column(Modifier.fillMaxWidth().padding(16.dp),
@@ -492,6 +520,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
                                         if (signedIn) {
                                             BilaiAccountStore.clear(activity)
+                                            prefs.edit().remove("account_email").apply()
                                             localReplies.clear()
                                             accountRequests.clear()
                                             pendingAccountActions.clear()
@@ -957,7 +986,8 @@ class BilaiShell(private val activity: ComponentActivity) {
 internal fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
 
 @Composable
-private fun Header(home: () -> Unit, openUrl: () -> Unit, search: () -> Unit, notify: () -> Unit) {
+private fun Header(home: () -> Unit, openUrl: () -> Unit, search: () -> Unit, notify: () -> Unit,
+                   dark: Boolean, toggleDark: () -> Unit, toggleAccent: () -> Unit) {
     val p = LocalBilaiColors.current
     Box(Modifier.fillMaxWidth().height(48.dp).background(p.bg)) {
         Row(Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -970,6 +1000,8 @@ private fun Header(home: () -> Unit, openUrl: () -> Unit, search: () -> Unit, no
                     letterSpacing = (-.025f * 18).sp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                HeaderButton(if (dark) Glyph.SUN else Glyph.MOON, "Toggle appearance", "btn_theme", p.text, toggleDark)
+                HeaderButton(Glyph.PALETTE, "Toggle accent", "btn_accent", p.accent, toggleAccent)
                 HeaderButton(Glyph.LINK, "Open YouTube URL", "btn_url", p.text, openUrl)
                 HeaderButton(Glyph.BELL, "Notifications", "btn_notifications", p.text, notify, true)
                 HeaderButton(Glyph.SEARCH, "Search", "btn_search", p.text, search)
