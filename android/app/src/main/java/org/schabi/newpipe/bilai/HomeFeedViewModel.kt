@@ -175,8 +175,9 @@ class HomeFeedViewModel : ViewModel() {
                         chipList = buildList {
                             add(FeedChip("All", Source.Query("trending videos today")))
                             home.chips.forEach { chip ->
-                                if (!chip.selected && chip.token != null)
-                                    add(FeedChip(chip.title, Source.Token(chip.token)))
+                                if (!chip.selected) chip.token?.let { token ->
+                                    add(FeedChip(chip.title, Source.Token(token)))
+                                }
                             }
                         }
                         publishChips()
