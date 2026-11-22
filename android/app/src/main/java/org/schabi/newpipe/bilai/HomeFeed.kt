@@ -45,9 +45,15 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
     val p = LocalBilaiColors.current
     LaunchedEffect(model) { model.start() }
     val rows = model.rows
-    LaunchedEffect(rows, list) {
-        snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-            .collect { if (rows.isNotEmpty() && it >= rows.size - 3) model.loadMore() }
+    val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 400.dp.roundToPx() }
+    LaunchedEffect(model.selected) { list.scrollToItem(0) }
+    LaunchedEffect(rows, list, model.loading, model.error) {
+        if (rows.isEmpty() || model.loading || model.error != null) return@LaunchedEffect
+        snapshotFlow {
+            val info = list.layoutInfo
+            val tail = info.visibleItemsInfo.lastOrNull { it.index == rows.size }
+            tail != null && tail.offset + tail.size - info.viewportEndOffset <= threshold
+        }.collect { closeToEnd -> if (closeToEnd) model.loadMore() }
     }
     val pull = rememberPullToRefreshState()
     val refreshing = model.loading && rows.isNotEmpty()
@@ -94,7 +100,7 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
                 }
             }
             itemsIndexed(rows, key = { index, row -> when (row) {
-                is FeedRow.Video -> "${row.item.url}:$index"
+                is FeedRow.Video -> row.item.url
                 is FeedRow.Shorts -> "shorts:$index"
             } }, contentType = { _, row -> row is FeedRow.Shorts }) { _, row ->
                 when (row) {
@@ -122,12 +128,19 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
                     }
                 }
             }
+            if (rows.isNotEmpty() && model.loading) items(2, contentType = { "paging-skeleton" }) {
+                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9).skeleton(p.elevated, p.elevatedHover))
+            }
+            if (rows.isNotEmpty() && model.error != null) item {
+                BasicText("Retry loading more", Modifier.clickable(onClick = model::loadMore).padding(16.dp),
+                    style = TextStyle(color = p.accent, fontSize = 14.sp))
+            }
         }
     }
 }
 
 @Composable
-private fun VideoCard(video: StreamInfoItem, progress: Float, open: (String, String) -> Unit,
+internal fun VideoCard(video: StreamInfoItem, progress: Float, open: (String, String) -> Unit,
                       menu: (StreamInfoItem) -> Unit) {
     val p = LocalBilaiColors.current
     val context = LocalContext.current

@@ -1,5 +1,8 @@
 package org.schabi.newpipe.bilai
 
+import org.schabi.newpipe.extractor.Page
+import org.schabi.newpipe.util.ExtractorHelper
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -39,7 +42,12 @@ private sealed class Source {
 
 private data class FeedChip(val title: String, val source: Source)
 
-private class FeedPage(val items: List<StreamInfoItem>, val next: String?)
+private sealed interface FeedCursor {
+    data class Home(val token: String) : FeedCursor
+    data class Search(val source: Source.Query, val page: Page?) : FeedCursor
+}
+
+private class FeedPage(val items: List<StreamInfoItem>, val next: FeedCursor?)
 
 /**
  * State of the home feed. Videos, chips and Shorts all come from YouTube's own home feed
@@ -52,7 +60,8 @@ class HomeFeedViewModel : ViewModel() {
 
     private var chipList: List<FeedChip> = emptyList()
     private var allItems: List<StreamInfoItem> = emptyList()
-    private var continuation: String? = null
+    private var continuation: FeedCursor? = null
+    private var generation = 0
 
     var chipTitles by mutableStateOf<List<String>>(emptyList())
         private set
@@ -113,6 +122,7 @@ class HomeFeedViewModel : ViewModel() {
     }
 
     private fun bootstrap() {
+        val request = ++generation
         job?.cancel()
         loading = true
         error = null
@@ -132,7 +142,8 @@ class HomeFeedViewModel : ViewModel() {
                     }
                     publishChips()
                     selected = 0
-                    applyPage(FeedPage(home.items, home.continuation), append = false)
+                    applyPage(FeedPage(home.items, home.continuation?.let { FeedCursor.Home(it) }
+                        ?: FeedCursor.Search(Source.Query("trending videos today"), null)), append = false)
                 } else {
                     android.util.Log.w("BilaiFeed", "home feed returned no items; using fallback")
                     useFallback()
@@ -149,7 +160,7 @@ class HomeFeedViewModel : ViewModel() {
                     error = inner.message ?: e.message ?: "Couldn't load videos"
                 }
             } finally {
-                loading = false
+                if (request == generation) loading = false
             }
         }
     }
@@ -177,7 +188,8 @@ class HomeFeedViewModel : ViewModel() {
 
     private fun loadSource(source: Source, append: Boolean) = loadPage(source, null, append)
 
-    private fun loadPage(source: Source, token: String?, append: Boolean) {
+    private fun loadPage(source: Source, token: FeedCursor?, append: Boolean) {
+        val request = ++generation
         job?.cancel()
         loading = true
         error = null
@@ -195,45 +207,59 @@ class HomeFeedViewModel : ViewModel() {
             } catch (e: Exception) {
                 error = e.message ?: "Couldn't load videos"
             } finally {
-                loading = false
+                if (request == generation) loading = false
             }
         }
     }
 
-    private fun fetch(source: Source, token: String?): FeedPage {
+    private fun fetch(source: Source, token: FeedCursor?): FeedPage {
+        if (token is FeedCursor.Search) return searchPage(token.source, token.page)
+        val homeToken = (token as? FeedCursor.Home)?.token
         val loc = NewPipe.getPreferredLocalization()
         val country = NewPipe.getPreferredContentCountry()
+        fun homePage(items: List<StreamInfoItem>, next: String?, fallback: String): FeedPage =
+            FeedPage(items, next?.takeUnless { it == homeToken }?.let { FeedCursor.Home(it) }
+                ?: FeedCursor.Search(Source.Query(fallback), null))
         return when (source) {
-            is Source.Home ->
-                if (token == null) {
-                    YoutubeHomeFeedExtractor.fetchHome(loc, country).let { FeedPage(it.items, it.continuation) }
-                } else {
-                    YoutubeHomeFeedExtractor.fetchContinuation(token, loc, country)
-                        .let { FeedPage(it.items, it.continuation) }
-                }
-            is Source.Token ->
-                YoutubeHomeFeedExtractor.fetchContinuation(token ?: source.token, loc, country)
-                    .let { FeedPage(it.items, it.continuation) }
-            is Source.Query -> {
-                val service = ServiceList.YouTube
-                val factory = service.searchQHFactory
-                // The YouTube search URL builder requires exactly one content filter; use "videos".
-                val videos = (0..60).asSequence()
-                    .mapNotNull { id -> runCatching { factory.getFilterItem(id) }.getOrNull() }
-                    .firstOrNull { it.name == "videos" }
-                val handler = if (videos != null) {
-                    factory.fromQuery(source.query, listOf(videos), null)
-                } else {
-                    factory.fromQuery(source.query)
-                }
-                val info = SearchInfo.getInfo(service, handler)
-                FeedPage(info.relatedItems.filterIsInstance<StreamInfoItem>(), null)
+            is Source.Home -> {
+                val page = if (homeToken == null) YoutubeHomeFeedExtractor.fetchHome(loc, country)
+                    else YoutubeHomeFeedExtractor.fetchContinuation(homeToken, loc, country)
+                homePage(page.items, page.continuation, "trending videos today")
             }
+            is Source.Token -> {
+                val page = YoutubeHomeFeedExtractor.fetchContinuation(homeToken ?: source.token, loc, country)
+                val title = chipList.firstOrNull { it.source == source }?.title ?: "trending videos today"
+                homePage(page.items, page.continuation, title)
+            }
+            is Source.Query -> searchPage(source, null)
             is Source.Trending -> {
                 val info = KioskInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/feed/trending")
-                FeedPage(info.relatedItems.filterIsInstance<StreamInfoItem>(), null)
+                FeedPage(info.relatedItems.filterIsInstance<StreamInfoItem>(),
+                    FeedCursor.Search(Source.Query("trending videos today"), null))
             }
         }
+    }
+
+    private fun searchPage(source: Source.Query, token: Page?): FeedPage {
+        val service = ServiceList.YouTube
+        val factory = service.searchQHFactory
+        val videos = (0..60).asSequence()
+            .mapNotNull { id -> runCatching { factory.getFilterItem(id) }.getOrNull() }
+            .firstOrNull { it.name == "videos" }
+        val filters = listOfNotNull(videos)
+        val results = if (token == null) {
+            val handler = if (videos != null) factory.fromQuery(source.query, filters, null)
+                else factory.fromQuery(source.query)
+            val info = SearchInfo.getInfo(service, handler)
+            info.relatedItems to info.nextPage
+        } else {
+            val info = ExtractorHelper.getMoreSearchItems(service.serviceId, source.query,
+                filters, emptyList(), token).blockingGet()
+            info.items to info.nextPage
+        }
+        return FeedPage(results.first.filterIsInstance<StreamInfoItem>(),
+            results.second?.takeIf { Page.isValid(it) && (it.url != token?.url || it.id != token?.id) }
+                ?.let { FeedCursor.Search(source, it) })
     }
 
     private suspend fun applyPage(page: FeedPage, append: Boolean) {
@@ -255,7 +281,12 @@ class HomeFeedViewModel : ViewModel() {
                 result.add(FeedRow.Video(item))
             }
         }
-        if (shorts.isNotEmpty()) result.add(minOf(2, result.size), FeedRow.Shorts(shorts))
+        shorts.chunked(8).forEachIndexed { index, group ->
+            val insertion = 2 + index * 13
+            if (index == 0 || insertion <= result.size) {
+                result.add(minOf(insertion, result.size), FeedRow.Shorts(group))
+            }
+        }
         rows = result
         if (result.isEmpty() && allItems.isNotEmpty() && continuation != null) loadMore()
     }
