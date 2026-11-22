@@ -1,0 +1,85 @@
+Performing Streamed Install
+Success
+[07:19:11] screen 1080x2400
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 9587
+WaitTime: 9609
+Complete
+[07:19:33] dismiss tap 894 1526
+[07:19:37] dismiss tap 726 1365
+[07:19:41] dismiss tap 894 2213
+[07:19:44] dismiss tap 435 1428
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 3872
+WaitTime: 3883
+Complete
+[07:19:57] shot 01_home_true_amber
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 3613
+WaitTime: 3631
+Complete
+[07:20:06] shot 02_home_false_amber
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 5343
+WaitTime: 5396
+Complete
+[07:20:16] shot 03_home_true_red
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 4969
+WaitTime: 4974
+Complete
+[07:20:27] shot 04_home_false_red
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 4446
+WaitTime: 4451
+Complete
+[07:20:40] shot 05_tab_shorts
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 3758
+WaitTime: 3769
+Complete
+[07:20:48] shot 06_tab_subs
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 3396
+WaitTime: 3401
+Complete
+[07:20:57] shot 07_tab_you
+Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (has extras) }
+Status: ok
+LaunchState: COLD
+Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
+TotalTime: 3577
+WaitTime: 3582
+Complete
+Starting: Intent { act=com.masharzy.bilaitube.DEBUG_PLAY (has extras) }
+Error: Activity not started, unable to resolve Intent { act=com.masharzy.bilaitube.DEBUG_PLAY flg=0x10000000 (has extras) }
+[07:21:11] shot 08_watch_expanded
+[07:21:23] shot 09_after_slow_drag
+[07:21:26] shot 10_mini_after_flick
+[07:21:31] shot 11_mini_tl
+[07:21:33] shot 12_expanded_again
+[07:21:34] done
