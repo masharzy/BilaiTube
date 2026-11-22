@@ -5,7 +5,11 @@ apk=$1
 out=$2
 pkg=com.masharzy.bilaitube
 mkdir -p "$out"
-trap 'adb logcat -d -b crash -v time > "$out/crash.txt" || true' EXIT
+capture_logs() {
+  adb logcat -d -b crash -v time > "$out/crash.txt" || true
+  adb logcat -d -v time > "$out/logcat.txt" || true
+}
+trap capture_logs EXIT
 adb install -r "$apk" | tee "$out/install.txt"
 adb logcat -c
 adb shell wm size 1170x2532
@@ -66,10 +70,12 @@ capture 04_home_light_red false red home
 capture 05_tab_shorts true amber shorts
 capture 06_tab_subs true amber subs
 capture 07_tab_you true amber you
-adb shell am force-stop "$pkg"
+# Start through the regular launcher first so the debug action is delivered to
+# an initialized, foreground activity, even on slower emulator cold starts.
+capture 00_player_host true amber home
 adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
-  -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4"
+  -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4" | tee "$out/player.launch.txt"
 sleep 3
 dump_ui "$out/08_watch_expanded.xml" player_surface
 if grep -q "Couldn't play" "$out/08_watch_expanded.xml"; then exit 1; fi
