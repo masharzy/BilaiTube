@@ -249,7 +249,15 @@ class BilaiShell(private val activity: ComponentActivity) {
                 "open_playlists" -> overlay = "Playlists"
                 "open_downloads" -> overlay = "Offline Downloads"
                 "open_comments" -> if (video != null) overlay = "Comments"
-                "open_settings" -> if (video != null) overlay = "Player settings"
+                "open_settings", "open_captions", "open_speed" -> if (video != null) {
+                    settingsPage = when (intent.getStringExtra("bt.action")) {
+                        "open_captions" -> "Captions"
+                        "open_speed" -> "Playback speed"
+                        else -> "Player settings"
+                    }
+                    overlay = "Player settings"
+                }
+                "fixture_end" -> engine.seekTo((engine.state.value.durationMs - 150).coerceAtLeast(0))
                 "minimize" -> { requestFullscreen(false); compact = true }
                 "expand" -> compact = false
                 "open_desc" -> if (video != null) overlay = "Description"
@@ -596,9 +604,15 @@ class BilaiShell(private val activity: ComponentActivity) {
         var next by remember(url) { mutableStateOf<Page?>(null) }
         var loading by remember(url) { mutableStateOf(true) }
         var failed by remember(url) { mutableStateOf(false) }
+        val fixture = BuildConfig.DEBUG && engine.current.value?.id == "fixture0000"
         val request = remember(url) { SerialDisposable() }
         var reload by remember(url) { mutableIntStateOf(0) }
         LaunchedEffect(url, reload) {
+            if (fixture) {
+                comments = WatchReviewFixture.comments
+                loading = false
+                return@LaunchedEffect
+            }
             loading = true
             failed = false
             request.set(ExtractorHelper.getCommentsInfo(ServiceList.YouTube.serviceId, url, reload > 0)
@@ -663,7 +677,7 @@ class BilaiShell(private val activity: ComponentActivity) {
             items(sorted, key = { it.commentId }) { comment ->
                 val root = url to comment.commentId
                 CommentItem(comment, initial, replyTo = replyTo,
-                    onReply = { target -> if (signedIn) replyTo = target else overlay = "Sign in to continue" },
+                    onReply = { target -> if (signedIn || fixture) replyTo = target else overlay = "Sign in to continue" },
                     local = localReplies[root].orEmpty(),
                     submit = { text ->
                         localReplies[root] = localReplies[root].orEmpty() + text
@@ -691,6 +705,10 @@ class BilaiShell(private val activity: ComponentActivity) {
         val request = remember(comment.commentId) { SerialDisposable() }
         DisposableEffect(request) { onDispose { request.dispose() } }
         fun loadReplies() {
+            if (BuildConfig.DEBUG && engine.current.value?.id == "fixture0000") {
+                replies = WatchReviewFixture.replies(comment.commentId)
+                return
+            }
             val page = next ?: return
             if (info == null || loading) return
             loading = true

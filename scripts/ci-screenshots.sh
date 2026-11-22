@@ -91,7 +91,13 @@ capture 00_player_host true amber home
 adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
   -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4" | tee "$out/player.launch.txt"
-sleep 3
+sleep 1
+dump_ui "$out/watch_expanded_full.xml" 'A quiet morning in the mountains'
+adb exec-out screencap -p > "$out/watch_expanded_full.png"
+sleep 4
+dump_ui "$out/watch_controls_hidden.xml" player_surface
+if grep -q player_minimize "$out/watch_controls_hidden.xml"; then exit 1; fi
+adb exec-out screencap -p > "$out/watch_controls_hidden.png"
 dump_ui "$out/08_watch_expanded.xml" player_surface
 if grep -q "Couldn't play" "$out/08_watch_expanded.xml"; then exit 1; fi
 adb exec-out screencap -p > "$out/08_watch_expanded.png"
@@ -110,14 +116,42 @@ sleep 1
 dump_ui "$out/settings_portrait.xml" 'Player settings'
 adb exec-out screencap -p > "$out/settings_portrait.png"
 adb shell input keyevent BACK
+capture_page settings_captions_page open_captions Captions
+capture_page settings_speed_page open_speed 'Playback speed'
+tap_node() {
+  local xml=$1 label=$2
+  local point
+  point=$(python3 - "$xml" "$label" <<'PYCODE'
+import re, sys, xml.etree.ElementTree as ET
+for node in ET.parse(sys.argv[1]).iter("node"):
+    if node.get("text") == sys.argv[2] or node.get("content-desc") == sys.argv[2]:
+        x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
+        print((x1+x2)//2, (y1+y2)//2)
+        break
+else:
+    sys.exit(1)
+PYCODE
+)
+  adb shell input tap $point
+}
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_comments
-sleep 1
+dump_ui "$out/comments_open.xml" Nadia
 adb exec-out screencap -p > "$out/comments_open.png"
+tap_node "$out/comments_open.xml" '2 replies'
+dump_ui "$out/comments_replies_open.xml" 'coming along'
+adb exec-out screencap -p > "$out/comments_replies_open.png"
+tap_node "$out/comments_replies_open.xml" Reply
+dump_ui "$out/comments_reply_box.xml" 'Reply to'
+adb exec-out screencap -p > "$out/comments_reply_box.png"
 adb shell input keyevent BACK
-adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_desc
+capture_page desc_open open_desc 'Filmed by BilaiTube Studio'
+adb shell 'input tap 190 340; input tap 190 340'
+adb exec-out screencap -p > "$out/seek_ripple.png"
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action fixture_end
 sleep 1
-adb exec-out screencap -p > "$out/12_desc_sheet.png"
-adb shell input keyevent BACK
+adb exec-out screencap -p > "$out/autoplay_endcard.png"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4"
 capture_page 13_video_menu open_menu 'Video options'
 adb shell dumpsys gfxinfo "$pkg" reset >/dev/null
 adb shell input swipe 585 300 585 1500 2500 &

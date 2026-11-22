@@ -187,6 +187,7 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         if (BuildConfig.DEBUG && debugFixture.scheme == "file" && debugFixture.authority.isNullOrEmpty()
             && debugFixture.path in setOf("${app.applicationInfo.dataDir}/sample.mp4",
                 "/data/data/${app.packageName}/sample.mp4")) {
+            metadata.value = org.schabi.newpipe.bilai.WatchReviewFixture.stream(url)
             playLocal(debugFixture, startMs)
             return
         }

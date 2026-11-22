@@ -27,6 +27,12 @@ fun NetImage(
                 if (url.isNullOrEmpty()) {
                     PicassoHelper.cancelRequest(view)
                     view.setImageDrawable(null)
+                } else if (org.schabi.newpipe.BuildConfig.DEBUG && url.startsWith("bilai-review://")) {
+                    PicassoHelper.cancelRequest(view)
+                    val colors = if (avatar) intArrayOf(0xFFFFAA29.toInt(), 0xFF9C431E.toInt())
+                        else intArrayOf(0xFF377C94.toInt(), 0xFF20375D.toInt(), 0xFFE6A367.toInt())
+                    view.setImageDrawable(android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TL_BR, colors))
                 } else if (avatar) {
                     PicassoHelper.loadAvatar(url).into(view)
                 } else {

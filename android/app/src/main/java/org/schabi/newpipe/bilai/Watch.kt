@@ -181,7 +181,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
         LaunchedEffect(url) { detailScroll.scrollToItem(0) }
         LaunchedEffect(url, info, detailScroll, recommendations.size) {
             val query = info?.name.orEmpty().trim()
-            if (query.isEmpty()) return@LaunchedEffect
+            if (query.isEmpty() || (BuildConfig.DEBUG && info?.id == "fixture0000")) return@LaunchedEffect
             snapshotFlow { detailScroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }.collect { index ->
                 if (index < recommendations.size - 4 || exhausted || loadingMore) return@collect
                 loadingMore = true
