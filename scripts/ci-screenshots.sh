@@ -10,6 +10,14 @@ capture_logs() {
   adb logcat -d -v time > "$out/logcat.txt" || true
 }
 trap capture_logs EXIT
+if command -v google-chrome >/dev/null; then
+  for ref in docs/reference/*.html; do
+    name=$(basename "${ref%.html}")
+    timeout 40s google-chrome --headless --no-sandbox --disable-dev-shm-usage --hide-scrollbars \
+      --window-size=390,844 --force-device-scale-factor=1 --virtual-time-budget=1800 \
+      --screenshot="$PWD/$out/reference_$name.png" "file://$PWD/$ref"
+  done
+fi
 adb install -r "$apk" | tee "$out/install.txt"
 adb logcat -c
 adb shell wm size 1170x2532
@@ -95,6 +103,7 @@ sleep 1
 dump_ui "$out/watch_expanded_full.xml" 'A quiet morning in the mountains'
 adb exec-out screencap -p > "$out/watch_expanded_full.png"
 sleep 4
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action fixture_pause
 dump_ui "$out/watch_controls_hidden.xml" player_surface
 if grep -q player_minimize "$out/watch_controls_hidden.xml"; then exit 1; fi
 adb exec-out screencap -p > "$out/watch_controls_hidden.png"

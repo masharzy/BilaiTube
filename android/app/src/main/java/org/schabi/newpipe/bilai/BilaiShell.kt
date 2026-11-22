@@ -257,7 +257,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                     }
                     overlay = "Player settings"
                 }
-                "fixture_end" -> engine.seekTo((engine.state.value.durationMs - 150).coerceAtLeast(0))
+                "fixture_pause" -> if (engine.state.value.playing) engine.togglePlay()
+                "fixture_end" -> {
+                    engine.seekTo((engine.state.value.durationMs - 150).coerceAtLeast(0))
+                    if (!engine.state.value.playing) engine.togglePlay()
+                }
                 "minimize" -> { requestFullscreen(false); compact = true }
                 "expand" -> compact = false
                 "open_desc" -> if (video != null) overlay = "Description"
