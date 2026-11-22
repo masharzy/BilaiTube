@@ -75,6 +75,8 @@ jobs:
 
       - name: Generate local playback fixture
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
           ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=24 \
             -t 35 -c:v libx264 -pix_fmt yuv420p -movflags +faststart /tmp/bilai-sample.mp4
 

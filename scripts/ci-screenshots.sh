@@ -65,4 +65,7 @@ adb shell uiautomator dump /sdcard/bilai-mini.xml
 adb pull /sdcard/bilai-mini.xml "$out/10_mini_br.xml"
 grep -q 'player_close' "$out/10_mini_br.xml"
 adb exec-out screencap -p > "$out/10_mini_br.png"
+adb shell input swipe 900 2100 260 300 1800
+sleep 1
+adb exec-out screencap -p > "$out/11_mini_tl.png"
 adb logcat -d -v time > "$out/logcat.txt"
