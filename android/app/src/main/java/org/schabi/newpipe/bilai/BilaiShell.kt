@@ -10,7 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.text.TextStyle as InputStyle
 import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.bilai.engine.ServicePlaybackEngine
@@ -28,6 +27,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.Page
+import org.schabi.newpipe.extractor.comments.CommentsInfo
+import org.schabi.newpipe.extractor.comments.CommentsInfoItem
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.util.ExtractorHelper
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
+import io.reactivex.rxjava3.disposables.SerialDisposable
+import io.reactivex.rxjava3.schedulers.Schedulers
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -70,14 +79,14 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var compact by mutableStateOf(false)
     private var overlay by mutableStateOf<String?>(null)
     private var scrollHome by mutableIntStateOf(0)
-    private var menuVideo by mutableStateOf<Pair<String, String>?>(null)
+    private var menuVideo by mutableStateOf<StreamInfoItem?>(null)
     private val debugReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getStringExtra("bt.action")) {
                 "minimize" -> compact = true
                 "expand" -> compact = false
                 "open_desc" -> if (video != null) overlay = "Description"
-                "open_menu" -> if (video != null) { menuVideo = video; overlay = "Video options" }
+                "open_menu" -> if (video != null) { menuVideo = null; overlay = "Video options" }
                 "open_search" -> overlay = "Search"
             }
         }
@@ -197,7 +206,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         )
                         Box(Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}")) {
                             if (tab == Tab.HOME) HomeFeed(homeFeed, list, ::play, { select(Tab.SHORTS) }) {
-                                menuVideo = it.url to it.name
+                                menuVideo = it
                                 overlay = "Video options"
                             }
                         }
@@ -211,7 +220,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                             })
                     }
                     overlay?.let { name ->
-                        Overlay(name, { overlay = null })
+                        if (name in listOf("Description", "Comments", "Video options")) {
+                            WatchSheet(name, { overlay = null })
+                        } else Overlay(name, { overlay = null })
                     }
                     AnimatedVisibility(
                         toastText != null,
@@ -235,6 +246,90 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     @Composable
+    private fun WatchSheet(name: String, dismiss: () -> Unit) {
+        val p = LocalBilaiColors.current
+        val info by engine.current.collectAsState()
+        val isMenu = name == "Video options"
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = if (isMenu) .6f else .25f))
+                .clickable(onClick = dismiss))
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .then(if (isMenu) Modifier else Modifier.height((maxHeight - maxWidth * 9 / 16).coerceAtLeast(120.dp)))
+                .background(p.sheetBg, RoundedCornerShape(topStart = if (isMenu) 24.dp else 16.dp,
+                    topEnd = if (isMenu) 24.dp else 16.dp))
+                .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    FeedText(name, 14, p.text, FontWeight.Bold)
+                    WatchPill("×", p.text, p.elevated, "Close", click = dismiss)
+                }
+                when (name) {
+                    "Description" -> Column(Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FeedText(info?.name ?: video?.second.orEmpty(), 14, p.text, FontWeight.Bold)
+                        BasicText(info?.description?.content.orEmpty(),
+                            style = TextStyle(color = p.text, fontSize = 12.sp, lineHeight = 18.sp))
+                    }
+                    "Comments" -> Comments(video?.first.orEmpty())
+                    "Video options" -> {
+                        val current = menuVideo
+                        val url = current?.url ?: video?.first
+                        if (current != null) WatchPill("Save to Watch Later", p.text, p.elevated) {
+                            WatchLater.add(activity, current)
+                            dismiss()
+                        }
+                        if (url != null) WatchPill("Share", p.text, p.elevated) { dismiss(); share(url) }
+                        WatchPill("Cancel", p.text, p.elevated, click = dismiss)
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun Comments(url: String) {
+        val p = LocalBilaiColors.current
+        var info by remember(url) { mutableStateOf<CommentsInfo?>(null) }
+        var comments by remember(url) { mutableStateOf<List<CommentsInfoItem>>(emptyList()) }
+        var next by remember(url) { mutableStateOf<Page?>(null) }
+        var loading by remember(url) { mutableStateOf(true) }
+        var failed by remember(url) { mutableStateOf(false) }
+        val request = remember(url) { SerialDisposable() }
+        DisposableEffect(url) {
+            request.set(ExtractorHelper.getCommentsInfo(ServiceList.YouTube.serviceId, url, false)
+                .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ page ->
+                    info = page
+                    comments = page.relatedItems
+                    next = page.nextPage
+                    loading = false
+                }, { loading = false; failed = true }))
+            onDispose { request.dispose() }
+        }
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            comments.forEach { comment ->
+                FeedText(comment.uploaderName.orEmpty(), 11, p.muted, FontWeight.SemiBold)
+                BasicText(comment.commentText.content, style = TextStyle(color = p.text, fontSize = 12.sp))
+            }
+            if (loading) FeedText("Loading comments…", 12, p.muted)
+            else if (failed) FeedText("Couldn't load comments.", 12, p.muted)
+            else if (comments.isEmpty()) FeedText("No comments", 12, p.muted)
+            val initial = info
+            val continuation = next
+            if (initial != null && Page.isValid(continuation) && !loading) {
+                WatchPill("Load more", p.text, p.elevated) {
+                    loading = true
+                    request.set(ExtractorHelper.getMoreCommentItems(ServiceList.YouTube.serviceId, initial, continuation)
+                        .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ page ->
+                            comments = comments + page.items
+                            next = page.nextPage
+                            loading = false
+                        }, { loading = false; failed = true }))
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun Overlay(name: String, dismiss: () -> Unit) {
         val p = LocalBilaiColors.current
         val info by engine.current.collectAsState()
@@ -247,7 +342,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                     "Open Any YouTube URL" -> {
                         FeedText("ভিডিও লিংক এখানে পেস্ট করো", 11, p.muted)
                         BasicTextField(input, { input = it }, singleLine = true,
-                            textStyle = InputStyle(color = p.text, fontSize = 12.sp),
+                            textStyle = TextStyle(color = p.text, fontSize = 12.sp),
                             modifier = Modifier.fillMaxWidth().background(p.elevated, RoundedCornerShape(12.dp)).padding(12.dp),
                             decorationBox = { field ->
                                 Box {
@@ -256,14 +351,6 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 }
                             })
                         WatchPill("Play Video", p.onAccent, p.accent) { openUrl(input) }
-                    }
-                    "Description" -> Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                        BasicText(info?.description?.content.orEmpty(),
-                            style = TextStyle(color = p.text, fontSize = 12.sp))
-                    }
-                    "Video options" -> menuVideo?.let { (url, title) ->
-                        WatchPill("Play", p.onAccent, p.accent) { play(url, title) }
-                        WatchPill("Share", p.text, p.elevated) { dismiss(); share(url) }
                     }
                 }
                 WatchPill("Close", p.text, p.elevated, click = dismiss)

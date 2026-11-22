@@ -1,5 +1,10 @@
 package org.schabi.newpipe.bilai
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,11 +17,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.platform.LocalContext
+import org.schabi.newpipe.util.Localization
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -37,8 +49,13 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
         snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
             .collect { if (rows.isNotEmpty() && it >= rows.size - 3) model.loadMore() }
     }
-    PullToRefreshBox(isRefreshing = model.loading && rows.isNotEmpty(),
-        onRefresh = model::refresh, modifier = Modifier.fillMaxSize()) {
+    val pull = rememberPullToRefreshState()
+    val refreshing = model.loading && rows.isNotEmpty()
+    PullToRefreshBox(isRefreshing = refreshing, onRefresh = model::refresh, state = pull,
+        modifier = Modifier.fillMaxSize(), indicator = {
+            PullToRefreshDefaults.Indicator(state = pull, isRefreshing = refreshing,
+                modifier = Modifier.align(Alignment.TopCenter), color = p.accent, containerColor = p.surface)
+        }) {
         LazyColumn(state = list, contentPadding = PaddingValues(bottom = 80.dp)) {
             stickyHeader {
                 LazyRow(Modifier.fillMaxWidth().background(p.bg),
@@ -57,7 +74,7 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
             if (model.loading && rows.isEmpty()) {
                 items(3) {
                     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9).background(p.elevated))
+                        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9).skeleton(p.elevated, p.elevatedHover))
                         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(Modifier.size(36.dp).background(p.elevated, CircleShape))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -113,6 +130,7 @@ internal fun HomeFeed(model: HomeFeedViewModel, list: LazyListState, open: (Stri
 private fun VideoCard(video: StreamInfoItem, progress: Float, open: (String, String) -> Unit,
                       menu: (StreamInfoItem) -> Unit) {
     val p = LocalBilaiColors.current
+    val context = LocalContext.current
     Column(Modifier.fillMaxWidth().clickable { open(video.url, video.name) }.padding(bottom = 16.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9)) {
             NetImage(video.thumbnailUrl, Modifier.fillMaxSize())
@@ -135,7 +153,9 @@ private fun VideoCard(video: StreamInfoItem, progress: Float, open: (String, Str
                 BasicText(video.name, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     style = TextStyle(color = p.text, fontSize = 14.5.sp,
                         lineHeight = 19.94.sp, fontWeight = FontWeight.SemiBold))
-                FeedText(listOfNotNull(video.uploaderName, video.textualUploadDate).joinToString(" • "), 12, p.muted)
+                FeedText(listOfNotNull(video.uploaderName,
+                    video.viewCount.takeIf { it >= 0 }?.let { Localization.localizeViewCount(context, it) },
+                    video.textualUploadDate).joinToString(" • "), 12, p.muted)
             }
             BasicText("⋮", Modifier.clickable { menu(video) }.padding(4.dp),
                 style = TextStyle(color = p.text, fontSize = 16.sp))
@@ -152,3 +172,16 @@ internal fun FeedText(text: String, size: Int, color: Color, weight: FontWeight 
 internal fun formatTime(seconds: Long): String = if (seconds >= 3600)
     String.format(Locale.ROOT, "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
 else String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60)
+
+@Composable
+private fun Modifier.skeleton(base: Color, highlight: Color): Modifier {
+    val phase = rememberInfiniteTransition(label = "feed shimmer").animateFloat(
+        initialValue = -.5f, targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "shimmer phase",
+    )
+    return drawBehind {
+        val x = size.width * phase.value
+        drawRect(Brush.linearGradient(listOf(base, highlight, base),
+            Offset(x - size.width * .3f, 0f), Offset(x + size.width * .3f, size.height)))
+    }
+}

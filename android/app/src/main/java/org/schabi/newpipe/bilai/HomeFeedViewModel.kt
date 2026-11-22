@@ -247,22 +247,15 @@ class HomeFeedViewModel : ViewModel() {
 
     private fun rebuildRows() {
         val result = ArrayList<FeedRow>()
-        var shelf = ArrayList<StreamInfoItem>()
-        fun flush() {
-            if (shelf.isNotEmpty()) {
-                result.add(FeedRow.Shorts(shelf))
-                shelf = ArrayList()
-            }
-        }
+        val shorts = ArrayList<StreamInfoItem>()
         for (item in allItems) {
             if (item.isShortFormContent) {
-                if (!hideShorts) shelf.add(item)
+                if (!hideShorts) shorts.add(item)
             } else {
-                flush()
                 result.add(FeedRow.Video(item))
             }
         }
-        flush()
+        if (shorts.isNotEmpty()) result.add(minOf(2, result.size), FeedRow.Shorts(shorts))
         rows = result
         if (result.isEmpty() && allItems.isNotEmpty() && continuation != null) loadMore()
     }

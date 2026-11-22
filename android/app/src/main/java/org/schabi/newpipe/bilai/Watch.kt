@@ -71,31 +71,35 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     }) {
         val fullHeight = (maxWidth.value * 9 / 16).dp
         // The details and the single video view occupy distinct layers.
-        if (detailsTouchable) {
+        val detailsVisible by remember { derivedStateOf { motion.morph < 1f / 1.45f } }
+        if (detailsVisible) {
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                alpha = (1 - 1.45f * motion.morph.coerceIn(0f, 1f)).coerceAtLeast(0f)
+            }.background(p.bg))
             Column(Modifier.fillMaxSize().graphicsLayer {
                 val t = motion.morph.coerceIn(0f, 1f)
                 alpha = (1 - 1.45f * t).coerceAtLeast(0f)
                 translationY = t * 90 * density
-            }.background(p.bg).padding(top = fullHeight)
-                .verticalScroll(rememberScrollState())
+            }.padding(top = fullHeight)
+                .verticalScroll(rememberScrollState(), enabled = detailsTouchable)
                 .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 144.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(Modifier.clickable { overlay("Description") }) {
+                Column(Modifier.watchClick(detailsTouchable) { overlay("Description") }) {
                     FeedText(info?.name ?: title, 17, p.text, FontWeight.Bold)
                     FeedText("${info?.viewCount?.takeIf { it >= 0 } ?: "—"} views  •  …more", 12, p.muted)
                 }
                 FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WatchPill("Float", p.accent, p.accentSoft) { onCompact(true) }
-                    WatchPill("Share", p.text, p.elevated) { overlay("Share") }
+                    WatchPill("Float", p.accent, p.accentSoft, enabled = detailsTouchable) { onCompact(true) }
+                    WatchPill("Share", p.text, p.elevated, enabled = detailsTouchable) { overlay("Share") }
                 }
                 Box(Modifier.fillMaxWidth().background(p.elevated, RoundedCornerShape(16.dp))
-                    .clickable { overlay("Comments") }.padding(12.dp)) {
+                    .watchClick(detailsTouchable) { overlay("Comments") }.padding(12.dp)) {
                     FeedText("Comments", 12, p.text, FontWeight.Bold)
                 }
                 FeedText("UP NEXT", 12, p.muted, FontWeight.Bold)
                 info?.relatedItems.orEmpty().filterIsInstance<StreamInfoItem>().take(25).forEach { item ->
-                    Row(Modifier.fillMaxWidth().clickable { playNext(item.url, item.name) },
+                    Row(Modifier.fillMaxWidth().watchClick(detailsTouchable) { playNext(item.url, item.name) },
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         NetImage(item.thumbnailUrl, Modifier.width(144.dp).aspectRatio(16f / 9))
                         FeedText(item.name, 12, p.text, FontWeight.SemiBold)
@@ -161,7 +165,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 }
                 Box(Modifier.align(Alignment.Center)) {
                     WatchPill(if (playback.playing) "Ⅱ" else "▶", Color.White, Color.Black.copy(alpha = .55f),
-                        if (playback.playing) "Pause" else "Play", engine::togglePlay)
+                        if (playback.playing) "Pause" else "Play", click = engine::togglePlay)
                 }
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = .8f))) {
                     BasicText("${formatTime(playback.positionMs / 1000)} / ${formatTime(playback.durationMs / 1000)}",
@@ -182,7 +186,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             } else if (miniVisual) {
                 Box(Modifier.align(Alignment.TopEnd).padding(6.dp)
                     .then(if (BuildConfig.DEBUG) Modifier.testTag("player_close") else Modifier)) {
-                    WatchPill("×", Color.White, Color.Black.copy(alpha = .8f), "Close player", close)
+                    WatchPill("×", Color.White, Color.Black.copy(alpha = .8f), "Close player", click = close)
                 }
             }
         }
@@ -190,8 +194,11 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
 }
 
 @Composable
-internal fun WatchPill(label: String, color: Color, bg: Color, description: String = label, click: () -> Unit) {
+internal fun WatchPill(label: String, color: Color, bg: Color, description: String = label, enabled: Boolean = true, click: () -> Unit) {
     BasicText(label, Modifier.background(bg, CircleShape).semantics { contentDescription = description }
-        .clickable(onClick = click).padding(horizontal = 12.dp, vertical = 8.dp),
+        .watchClick(enabled, click).padding(horizontal = 12.dp, vertical = 8.dp),
         style = TextStyle(color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
 }
+
+private fun Modifier.watchClick(enabled: Boolean, action: () -> Unit) =
+    if (enabled) clickable(onClick = action) else this
