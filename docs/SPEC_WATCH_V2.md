@@ -108,3 +108,8 @@ Settings → **Playback speed** sub-page: large value (`3.05x`), slider **0.25×
 
 ## A6. Settings is a paged menu (YouTube style)
 Main page rows: Autoplay (switch), Captions (value ›), Quality (value ›), Playback speed (value ›), SponsorBlock (switch), Loop video (switch). Sub-pages (Captions, Quality, Speed) slide in (240 ms, from the right) with a back arrow in the header. Quality list: Auto, 2160p, 1440p, 1080p60, 720p, 480p, 360p, 240p, 144p (only what the stream offers), check on the active one. Same content in the portrait bottom sheet and the landscape right drawer.
+
+## A7. Signed-out behavior for account actions (Like, Dislike, Subscribe, comment, reply, Save to playlist)
+- These need a signed-in session (cookies). When signed out, tapping any of them opens a small bottom sheet in the app style: title `Sign in to continue`, one line explaining why (`Like, subscribe and comment need your Google account`), buttons `Sign in` (accent, opens the device-account chooser) and `Not now`. Do **not** change the button state or counts when signed out, and never fake success.
+- Signed in: Like/Dislike/Subscribe call the engine's account endpoints; the UI updates optimistically (like pop animation, Subscribe → Subscribed) and rolls back with a toast if the call fails.
+- Always available without sign-in: watching, Share, Download, Float, local Watch Later, local history, reading comments, SponsorBlock, RYD counts.
