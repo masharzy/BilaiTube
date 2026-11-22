@@ -1,0 +1,9 @@
+First release of BilaiTube:
+- YouTube-style Home, Shorts, Subscriptions and You
+- Spring-physics mini player, swipe-up fullscreen, double-tap seek
+- Quality, captions, speed up to 4x, autoplay, PiP, background play
+- Search with history
+- Downloads in any quality or audio only
+- Optional Google sign-in for your feed and playlists
+- SponsorBlock and Return YouTube Dislike
+- Built-in updater

@@ -15,6 +15,18 @@ Pick the file that matches your phone; almost every modern phone uses **arm64-v8
 Once installed, BilaiTube checks for new versions by itself (You → Check for updates). Tap
 **Update now**; Android shows one confirmation screen and the update installs.
 
+You can also track releases with [Obtainium](https://github.com/ImranR98/Obtainium) using this
+repository's URL.
+
+## Screenshots
+
+<p>
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="180">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="180">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="180">
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="180">
+</p>
+
 ## Features
 
 - **Home** with YouTube's own category chips, endless scrolling and Shorts shelves; personalised
@@ -66,6 +78,7 @@ Add four repository secrets so every release has the same signature (needed for 
   `android/app/src/main/java/org/schabi/newpipe/bilai/` (Jetpack Compose)
 - `PipePipeExtractor/` – the on-device YouTube extractor
 - `docs/` – design specs, reference prototypes and release notes
+- `fastlane/` – store listing (descriptions, changelogs, screenshots) used by F-Droid-style repositories
 
 ## Privacy
 

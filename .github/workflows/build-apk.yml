@@ -69,7 +69,7 @@ jobs:
         run: |
           mkdir /tmp/logs && grep -E "^e: |error:|FAILED|What went wrong|Execution failed|AAPT|Caused by" -A3 build.log | head -400 > /tmp/logs/errors.txt || true
           tail -150 build.log > /tmp/logs/tail.txt
-          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git config user.name masharzy && git config user.email masharzy@users.noreply.github.com
           git checkout --orphan ci-logs && git rm -rf . -q
           cp /tmp/logs/* . && git add errors.txt tail.txt
           git commit -qm "build log for ${GITHUB_SHA}"
@@ -125,8 +125,8 @@ jobs:
           mkdir -p "/tmp/pub/${GITHUB_SHA}"
           cp -r shots/. "/tmp/pub/${GITHUB_SHA}/"
           echo "${GITHUB_SHA}" > "/tmp/pub/${GITHUB_SHA}/SHA.txt"
-          git config user.name ci
-          git config user.email ci@users.noreply.github.com
+          git config user.name masharzy
+          git config user.email masharzy@users.noreply.github.com
           # Screenshot runners may finish simultaneously. Rebase the publication on
           # the newest remote tip and retry; never force-push or lose older evidence.
           for attempt in 1 2 3 4 5 6 7 8; do

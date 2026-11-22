@@ -1,15 +1,18 @@
-NewPipe, reimagined: faster, more stable, and packed with more features.
+<p>BilaiTube is a free and open-source YouTube client with a familiar YouTube-style interface in a warm amber colour scheme. Everything runs on your phone: there is no BilaiTube server, no ads and no tracking.</p>
 
-<b>Beyond NewPipe</b>
+<p><b>Features</b></p>
+<ul>
+<li>Home feed with YouTube's own category chips, endless scrolling and Shorts shelves</li>
+<li>Smooth watch page: drag the video down into a floating mini player, throw it into any corner, flick it away to close</li>
+<li>Swipe up for fullscreen, double-tap to skip 10 seconds</li>
+<li>Quality, captions, playback speed from 0.25x to 4x, autoplay, loop, picture-in-picture and background play</li>
+<li>Full-screen Shorts feed</li>
+<li>Search with history, suggestions and mixed results</li>
+<li>Download videos in the quality you choose or audio only; files go to Movies/BilaiTube and Music/BilaiTube</li>
+<li>Subscriptions feed, history, Watch Later and playlists</li>
+<li>Optional Google sign-in for your own feed, Watch Later, liked videos and playlists; the session stays encrypted on the phone</li>
+<li>SponsorBlock skips sponsor segments, Return YouTube Dislike shows dislike counts</li>
+<li>Light and dark themes, Warm Amber or Classic Red accent</li>
+</ul>
 
-* SponsorBlock (YouTube & BiliBili)
-* ReturnYouTubeDislike
-* Bullet comments / Live Chats
-* Search filters
-* Search & sort in local playlists
-* Filter out unwanted items by keywords/channels/...
-* Music player mode & Background playing
-* Sleep timer
-* Fullscreen gestures
-* Login to watch restricted / premium contents
-* … and many minor improvements
+<p>BilaiTube is based on PipePipe and NewPipe and is licensed under the GPL-3.0. It is not affiliated with YouTube or Google.</p>

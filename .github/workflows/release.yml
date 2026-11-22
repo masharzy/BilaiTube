@@ -119,7 +119,7 @@ jobs:
         run: |
           mkdir /tmp/logs && grep -E "^e: |error:|FAILED|What went wrong|Execution failed|AAPT|Caused by" -A3 build.log | head -400 > /tmp/logs/errors.txt || true
           tail -150 build.log > /tmp/logs/tail.txt || true
-          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git config user.name masharzy && git config user.email masharzy@users.noreply.github.com
           git checkout --orphan ci-logs-release && git rm -rf . -q
           cp /tmp/logs/* . && git add errors.txt tail.txt
           git commit -qm "release log for ${GITHUB_SHA}"
