@@ -9,11 +9,32 @@ shot() { adb exec-out screencap -p > "$OUT/$1.png" 2>>"$OUT/steps.log" && log "s
 dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/$1.xml" >/dev/null 2>&1; }
 start() { adb shell am start -W -n "$PKG/$ACT" "$@" >>"$OUT/steps.log" 2>&1; sleep 4; }
 
+# Dismiss first-run dialogs (legacy "What's New", update checker, announcements) by tapping NO/OK/Cancel buttons.
+dismiss_dialogs() {
+  for _ in 1 2 3 4 5 6; do
+    adb shell uiautomator dump /sdcard/d.xml >/dev/null 2>&1
+    adb pull /sdcard/d.xml /tmp/d.xml >/dev/null 2>&1
+    xy=$(python3 - <<'PY'
+import re
+try: s=open('/tmp/d.xml',encoding='utf-8').read()
+except Exception: raise SystemExit
+for want in ('NO','OK','Cancel','CANCEL','Not now','Skip','Allow'):
+    for m in re.finditer(r'<node[^>]*text="%s"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'%want,s):
+        a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); raise SystemExit
+PY
+)
+    [ -z "$xy" ] && break
+    log "dismiss tap $xy"; adb shell input tap $xy; sleep 1
+  done
+}
+
 adb install -r -g "$APK" >>"$OUT/steps.log" 2>&1 || { log "install failed"; exit 0; }
 adb shell settings put global window_animation_scale 1
 read W H < <(adb shell wm size | tail -1 | sed -E 's/.*: ([0-9]+)x([0-9]+).*/\1 \2/')
 log "screen ${W}x${H}"
 adb logcat -c
+# warm-up launch to clear first-run dialogs once
+start; dismiss_dialogs; dismiss_dialogs
 
 # 1. theme/accent matrix (needs debug hooks; falls back to default UI if not implemented yet)
 n=1
