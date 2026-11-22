@@ -76,6 +76,14 @@ capture 01_home_dark_amber true amber home
 capture 02_home_light_amber false amber home
 capture 03_home_dark_red true red home
 capture 04_home_light_red false red home
+adb logcat -d -s BilaiFeed:W > "$out/bilai-feed.txt"
+adb shell am force-stop "$pkg"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  --es bt.tab home --ez bt.home_fixture true
+sleep 1
+adb shell input swipe 585 1830 585 760 450
+dump_ui "$out/home_shorts_shelf.xml" "Shorts"
+adb exec-out screencap -p > "$out/home_shorts_shelf.png"
 capture 05_tab_shorts true amber shorts
 capture 06_tab_subs true amber subs
 capture 07_tab_you true amber you
