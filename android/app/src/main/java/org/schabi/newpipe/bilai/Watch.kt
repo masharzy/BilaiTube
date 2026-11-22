@@ -40,7 +40,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 @Composable
 internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: Boolean,
-                   onCompact: (Boolean) -> Unit, close: () -> Unit, playNext: (String, String) -> Unit,
+                   onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float, close: () -> Unit, playNext: (String, String) -> Unit,
                    overlay: (String) -> Unit) {
     val p = LocalBilaiColors.current
     val playback by engine.state.collectAsState()
@@ -51,12 +51,25 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     val pointerCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
     var spring by remember { mutableStateOf<Job?>(null) }
     var controls by remember { mutableStateOf(true) }
-    var speed by remember { mutableIntStateOf(0) }
-    val speeds = remember { floatArrayOf(1f, 1.25f, 1.5f, 2f, .75f) }
-    val miniVisual by remember { derivedStateOf { motion.morph > .55f } }
+    val latestPlayback by rememberUpdatedState(playback)
+    var tapJob by remember { mutableStateOf<Job?>(null) }
+    var lastTap by remember(url) { mutableLongStateOf(0) }
+    var seekSide by remember(url) { mutableIntStateOf(0) }
+    var seekCount by remember(url) { mutableIntStateOf(0) }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
+    fun seek(direction: Int) {
+        val state = latestPlayback
+        if (state.durationMs <= 0) return
+        engine.seekTo((state.positionMs + direction * 10_000L).coerceIn(0, state.durationMs))
+        seekCount = if (seekSide == direction && seekJob?.isActive == true) seekCount + 10 else 10
+        seekSide = direction
+        seekJob?.cancel()
+        seekJob = scope.launch { kotlinx.coroutines.delay(750); seekCount = 0 }
+    }
+    val miniVisual by remember(fullscreen) { derivedStateOf { !fullscreen && motion.morph > .55f } }
     val detailsTouchable by remember { derivedStateOf { motion.morph < .2f } }
     fun settle() { spring?.cancel(); spring = scope.launch { motion.run() } }
-    LaunchedEffect(url) { motion.opened(); settle(); controls = true; speed = 0 }
+    LaunchedEffect(url, fullscreen) { motion.opened(); settle(); controls = true }
     LaunchedEffect(compact) {
         if (compact != motion.minimized) {
             if (compact) motion.minimize(2.5f) else motion.expand(-1.4f)
@@ -76,7 +89,9 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
         val fullHeight = (maxWidth.value * 9 / 16).dp
         // The details and the single video view occupy distinct layers.
         val detailsVisible by remember { derivedStateOf { motion.morph < 1f / 1.45f } }
-        if (detailsVisible) {
+        val detailScroll = rememberScrollState()
+        LaunchedEffect(url) { detailScroll.scrollTo(0) }
+        if (!fullscreen && detailsVisible) {
             Box(Modifier.fillMaxSize().graphicsLayer {
                 alpha = (1 - 1.45f * motion.morph.coerceIn(0f, 1f)).coerceAtLeast(0f)
             }.background(p.bg))
@@ -85,7 +100,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 alpha = (1 - 1.45f * t).coerceAtLeast(0f)
                 translationY = t * 90 * density
             }.padding(top = fullHeight)
-                .verticalScroll(rememberScrollState(), enabled = detailsTouchable)
+                .verticalScroll(detailScroll, enabled = detailsTouchable)
                 .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 144.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Column(Modifier.watchClick(detailsTouchable) { overlay("Description") }) {
@@ -111,8 +126,8 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(fullHeight).graphicsLayer {
-            val t = motion.morph.coerceIn(0f, 1.12f)
+        Box(Modifier.fillMaxWidth().height(if (fullscreen) maxHeight else fullHeight).graphicsLayer {
+            val t = if (fullscreen) 0f else motion.morph.coerceIn(0f, 1.12f)
             val clamped = t.coerceAtMost(1f)
             val scale = 1 - clamped * (1 - motion.miniWidth / motion.width.coerceAtLeast(1f))
             transformOrigin = TransformOrigin(0f, 0f)
@@ -126,7 +141,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             AndroidView(factory = { context -> TextureView(context).also(engine::attachSurface) },
                 modifier = Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().onGloballyPositioned { pointerCoordinates[0] = it }
-                .pointerInput(url, density) {
+                .pointerInput(url, density, fullscreen) {
                 fun toRoot(position: Offset): Offset {
                     val coordinates = pointerCoordinates[0]
                     return if (coordinates?.isAttached == true) coordinates.localToRoot(position) else position
@@ -147,15 +162,30 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                         tracker.addPosition(change.uptimeMillis, point)
                         val delta = point - origin
                         if (change.pressed && delta.getDistance() >= 8 * density) {
-                            motion.move(delta.x / density, delta.y / density)
+                            if (!fullscreen) motion.move(delta.x / density, delta.y / density)
                             change.consume()
                         }
                     } while (last.pressed)
                     val delta = (point - origin) / density
                     val v = tracker.calculateVelocity()
-                    if (motion.release(delta.x, delta.y, v.x / density, v.y / density)) close()
+                    if ((fullscreen && delta.y >= 14) || (!fullscreen && !motion.minimized && delta.y <= -14)) {
+                        motion.release(0f, 0f, 0f, 0f)
+                        onFullscreen(!fullscreen)
+                        return@awaitEachGesture
+                    }
+                    if (motion.release(if (fullscreen) 0f else delta.x, if (fullscreen) 0f else delta.y, v.x / density, v.y / density)) close()
                     else {
-                        if (!motion.minimized && !compact && delta.getDistance() < 8) controls = !controls
+                        if (!motion.minimized && (fullscreen || !compact) && delta.getDistance() < 8) {
+                            if (last.uptimeMillis - lastTap in 1L..300L && tapJob?.isActive == true) {
+                                tapJob?.cancel()
+                                lastTap = 0
+                                seek(if (down.position.x < size.width / 2) -1 else 1)
+                            } else {
+                                lastTap = last.uptimeMillis
+                                tapJob?.cancel()
+                                tapJob = scope.launch { kotlinx.coroutines.delay(300); controls = !controls }
+                            }
+                        }
                         onCompact(motion.minimized)
                         settle()
                     }
@@ -167,24 +197,35 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             if (!miniVisual && controls) {
                 Box(Modifier.align(Alignment.TopStart).padding(8.dp)
                     .then(if (BuildConfig.DEBUG) Modifier.testTag("player_minimize") else Modifier)) {
-                    WatchPill("⌄", Color.White, Color.Black.copy(alpha = .5f), "Minimize") { onCompact(true) }
-                }
-                Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                    WatchPill("${speeds[speed]}x", Color.White, Color.Black.copy(alpha = .55f)) {
-                        speed = (speed + 1) % speeds.size
-                        engine.setSpeed(speeds[speed])
+                    WatchPill("⌄", Color.White, Color.Black.copy(alpha = .5f), if (fullscreen) "Exit fullscreen" else "Minimize") {
+                        if (fullscreen) onFullscreen(false) else onCompact(true)
                     }
                 }
-                Box(Modifier.align(Alignment.Center)) {
+                Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                    WatchPill(formatSpeed(speed), Color.White, Color.Black.copy(alpha = .55f)) { overlay("Playback speed") }
+                }
+                if (seekCount == 0) Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    if (fullscreen) WatchPill("↶ 10", Color.White, Color.Black.copy(alpha = .55f)) { seek(-1) }
                     WatchPill(if (playback.playing) "Ⅱ" else "▶", Color.White, Color.Black.copy(alpha = .55f),
                         if (playback.playing) "Pause" else "Play", click = engine::togglePlay)
+                    if (fullscreen) WatchPill("10 ↷", Color.White, Color.Black.copy(alpha = .55f)) { seek(1) }
                 }
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = .8f))) {
-                    BasicText("${formatTime(playback.positionMs / 1000)} / ${formatTime(playback.durationMs / 1000)}",
-                        Modifier.padding(8.dp), style = TextStyle(color = Color.White, fontSize = 10.sp))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        BasicText("${formatTime(playback.positionMs / 1000)} / ${formatTime(playback.durationMs / 1000)}",
+                            style = TextStyle(color = Color.White, fontSize = 10.sp))
+                        WatchPill("⛶", Color.White, Color.Transparent,
+                            if (fullscreen) "Exit fullscreen" else "Fullscreen") { onFullscreen(!fullscreen) }
+                    }
                     Box(Modifier.fillMaxWidth().height(24.dp).pointerInput(playback.durationMs) {
                         awaitEachGesture {
-                            val point = awaitFirstDown()
+                            var point = awaitFirstDown()
+                            val id = point.id
+                            do {
+                                point = awaitPointerEvent().changes.firstOrNull { it.id == id } ?: break
+                                point.consume()
+                            } while (point.pressed)
                             if (playback.durationMs > 0) engine.seekTo((point.position.x / size.width *
                                 playback.durationMs).toLong().coerceIn(0L, playback.durationMs))
                         }
@@ -201,9 +242,21 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     WatchPill("×", Color.White, Color.Black.copy(alpha = .8f), "Close player", click = close)
                 }
             }
+            if (seekCount > 0 && !miniVisual) {
+                Box(Modifier.align(if (seekSide < 0) Alignment.CenterStart else Alignment.CenterEnd)
+                    .fillMaxHeight().fillMaxWidth(.42f).background(Color.White.copy(alpha = .30f), CircleShape),
+                    contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        FeedText(if (seekSide < 0) "◀ ◀ ◀" else "▶ ▶ ▶", 22, Color.White)
+                        FeedText("$seekCount seconds", 13, Color.White, FontWeight.SemiBold)
+                    }
+                }
+            }
         }
     }
 }
+
+internal fun formatSpeed(speed: Float): String = String.format(java.util.Locale.ROOT, "%.2fx", speed)
 
 @Composable
 internal fun WatchPill(label: String, color: Color, bg: Color, description: String = label, enabled: Boolean = true, click: () -> Unit) {

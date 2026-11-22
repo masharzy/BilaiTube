@@ -120,6 +120,7 @@ public final class Player {
     //////////////////////////////////////////////////////////////////////////*/
 
     ExoPlayer simpleExoPlayer;
+    @Nullable private android.view.TextureView bilaiSurface;
     private ExoPlayerEventAdapter exoPlayerEventAdapter;
     private AudioReactor audioReactor;
     @Nullable private MediaSessionManager mediaSessionManager;
@@ -355,7 +356,11 @@ public final class Player {
         broadcastReceiverController.register();
 
         // Setup video view
-        surfaceController.setupVideoSurface();
+        if (bilaiSurface == null) {
+            surfaceController.setupVideoSurface();
+        } else {
+            simpleExoPlayer.setVideoTextureView(bilaiSurface);
+        }
 
         // enable media tunneling
         if (PreferenceManager.getDefaultSharedPreferences(context)
@@ -1075,8 +1080,16 @@ public final class Player {
 
     /** The Compose host owns its TextureView; playback stays in this service. */
     public void setBilaiSurface(@Nullable final android.view.TextureView surface) {
-        if (!exoPlayerIsNull()) {
+        final android.view.TextureView previous = bilaiSurface;
+        bilaiSurface = surface;
+        if (exoPlayerIsNull()) {
+            return;
+        }
+        if (surface != null) {
+            surfaceController.cleanupVideoSurface();
             simpleExoPlayer.setVideoTextureView(surface);
+        } else if (previous != null) {
+            simpleExoPlayer.clearVideoTextureView(previous);
         }
     }
 

@@ -62,6 +62,12 @@ sleep 3
 dump_ui "$out/08_watch_expanded.xml" player_surface
 if grep -q "Couldn't play" "$out/08_watch_expanded.xml"; then exit 1; fi
 adb exec-out screencap -p > "$out/08_watch_expanded.png"
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action fullscreen
+sleep 2
+dump_ui "$out/fullscreen_landscape.xml" player_surface
+adb exec-out screencap -p > "$out/fullscreen_landscape.png"
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action exit_fullscreen
+sleep 2
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_desc
 sleep 1
 adb exec-out screencap -p > "$out/12_desc_sheet.png"

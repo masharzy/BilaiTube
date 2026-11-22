@@ -1,6 +1,9 @@
 package org.schabi.newpipe.bilai
 
 import android.content.Context
+import android.content.pm.ActivityInfo
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.net.Uri
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import org.schabi.newpipe.BuildConfig
 
 private enum class Tab(val id: String, val label: String, val glyph: Glyph) {
@@ -77,13 +81,34 @@ class BilaiShell(private val activity: ComponentActivity) {
     private val homeFeed by lazy { ViewModelProvider(activity)[HomeFeedViewModel::class.java] }
     private var video by mutableStateOf<Pair<String, String>?>(null)
     private var compact by mutableStateOf(false)
+    private var playbackSpeed by mutableFloatStateOf(1f)
+    private var fullscreen by mutableStateOf(false)
+    private var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+    private fun setFullscreen(enabled: Boolean) {
+        if (enabled == fullscreen || video == null) return
+        if (enabled) previousOrientation = activity.requestedOrientation
+        fullscreen = enabled
+        compact = false
+        overlay = null
+        activity.requestedOrientation = if (enabled) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else previousOrientation
+        WindowCompat.getInsetsController(activity.window, view).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (enabled) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
     private var overlay by mutableStateOf<String?>(null)
     private var scrollHome by mutableIntStateOf(0)
     private var menuVideo by mutableStateOf<StreamInfoItem?>(null)
     private val debugReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getStringExtra("bt.action")) {
-                "minimize" -> compact = true
+                "fullscreen" -> setFullscreen(true)
+                "exit_fullscreen" -> setFullscreen(false)
+                "open_comments" -> if (video != null) overlay = "Comments"
+                "open_settings" -> if (video != null) overlay = "Playback speed"
+                "minimize" -> { setFullscreen(false); compact = true }
                 "expand" -> compact = false
                 "open_desc" -> if (video != null) overlay = "Description"
                 "open_menu" -> if (video != null) { menuVideo = null; overlay = "Video options" }
@@ -158,6 +183,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         BackHandler(enabled = overlay != null || (video != null && !compact) || tab != Tab.HOME) {
             when {
                 overlay != null -> overlay = null
+                fullscreen -> setFullscreen(false)
                 video != null && !compact -> compact = true
                 else -> select(Tab.HOME)
             }
@@ -182,12 +208,12 @@ class BilaiShell(private val activity: ComponentActivity) {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            Box(Modifier.fillMaxSize().background(colors.bg).systemBarsPadding().background(colors.outerBg)
+            Box(Modifier.fillMaxSize().background(colors.bg).then(if (fullscreen) Modifier else Modifier.systemBarsPadding()).background(colors.outerBg)
                 .then(if (BuildConfig.DEBUG) Modifier.semantics { testTagsAsResourceId = true } else Modifier),
                 contentAlignment = Alignment.Center) {
-                Box(Modifier.widthIn(max = 430.dp).fillMaxWidth().heightIn(max = 880.dp).fillMaxHeight()
+                Box(Modifier.then(if (fullscreen) Modifier else Modifier.widthIn(max = 430.dp).heightIn(max = 880.dp)).fillMaxSize()
                     .background(colors.bg)) {
-                    Column(Modifier.fillMaxSize()) {
+                    if (!fullscreen) Column(Modifier.fillMaxSize()) {
                         Header(
                             dark = dark,
                             home = { homeFeed.select(0); scrollHome++; select(Tab.HOME) },
@@ -213,8 +239,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                         BottomNav(tab, ::select)
                     }
                     video?.let { (url, title) ->
-                        Watch(url, title, engine, compact, { compact = it },
-                            close = { engine.stop(); video = null; toast = "Mini-player dismissed" },
+                        Watch(url, title, engine, compact, { compact = it }, fullscreen, ::setFullscreen, playbackSpeed,
+                            close = { setFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play, overlay = { name ->
                                 if (name == "Share") share(url) else overlay = name
                             })
@@ -339,6 +365,21 @@ class BilaiShell(private val activity: ComponentActivity) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FeedText(name, 14, p.text, FontWeight.Bold)
                 when (name) {
+                    "Playback speed" -> {
+                        var speed by remember { mutableFloatStateOf(playbackSpeed) }
+                        FeedText(formatSpeed(speed), 18, p.accent, FontWeight.Bold)
+                        androidx.compose.material3.Slider(
+                            value = speed,
+                            onValueChange = {
+                                speed = (it * 20).roundToInt() / 20f
+                                playbackSpeed = speed
+                                engine.setSpeed(speed)
+                            },
+                            valueRange = .25f..4f, steps = 74,
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.elevated),
+                        )
+                    }
                     "Open Any YouTube URL" -> {
                         FeedText("ভিডিও লিংক এখানে পেস্ট করো", 11, p.muted)
                         BasicTextField(input, { input = it }, singleLine = true,
