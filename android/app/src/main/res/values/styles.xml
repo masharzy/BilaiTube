@@ -9,9 +9,9 @@
         <item name="colorAccent">@android:color/transparent</item>
 
         <item name="android:windowBackground">@drawable/splash_background</item>
-        <item name="android:windowSplashScreenBackground">#0F0F0F</item>
-        <item name="android:statusBarColor">#0F0F0F</item>
-        <item name="android:navigationBarColor">#0F0F0F</item>
+        <item name="android:windowSplashScreenBackground">@color/bilai_launch_background</item>
+        <item name="android:statusBarColor">@color/bilai_launch_background</item>
+        <item name="android:navigationBarColor">@color/bilai_launch_background</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>

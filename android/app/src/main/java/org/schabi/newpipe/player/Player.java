@@ -1073,6 +1073,13 @@ public final class Player {
         return sourceController.isCurrentStreamSabr();
     }
 
+    /** The Compose host owns its TextureView; playback stays in this service. */
+    public void setBilaiSurface(@Nullable final android.view.TextureView surface) {
+        if (!exoPlayerIsNull()) {
+            simpleExoPlayer.setVideoTextureView(surface);
+        }
+    }
+
     public void seekTo(final long positionMillis) {
         transportController.seekTo(positionMillis);
     }

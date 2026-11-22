@@ -7,5 +7,12 @@
     <application
         android:name=".DebugApp"
         android:usesCleartextTraffic="true"
-        tools:replace="android:name" />
+        tools:replace="android:name">
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="com.masharzy.bilaitube.DEBUG_PLAY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>

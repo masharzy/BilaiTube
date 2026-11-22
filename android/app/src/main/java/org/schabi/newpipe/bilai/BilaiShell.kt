@@ -1,6 +1,19 @@
 package org.schabi.newpipe.bilai
 
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.net.Uri
+import androidx.core.content.ContextCompat
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.text.TextStyle as InputStyle
+import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.launch
+import org.schabi.newpipe.bilai.engine.ServicePlaybackEngine
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -51,6 +64,25 @@ private enum class Tab(val id: String, val label: String, val glyph: Glyph) {
 
 @OptIn(ExperimentalComposeUiApi::class)
 class BilaiShell(private val activity: ComponentActivity) {
+    private val engine = ServicePlaybackEngine(activity)
+    private val homeFeed by lazy { ViewModelProvider(activity)[HomeFeedViewModel::class.java] }
+    private var video by mutableStateOf<Pair<String, String>?>(null)
+    private var compact by mutableStateOf(false)
+    private var overlay by mutableStateOf<String?>(null)
+    private var scrollHome by mutableIntStateOf(0)
+    private var menuVideo by mutableStateOf<Pair<String, String>?>(null)
+    private val debugReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.getStringExtra("bt.action")) {
+                "minimize" -> compact = true
+                "expand" -> compact = false
+                "open_desc" -> if (video != null) overlay = "Description"
+                "open_menu" -> if (video != null) { menuVideo = video; overlay = "Video options" }
+                "open_search" -> overlay = "Search"
+            }
+        }
+    }
+
     private val prefs = activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE)
     private var dark by mutableStateOf(prefs.getBoolean("dark", true))
     private var red by mutableStateOf(prefs.getBoolean("red", false))
@@ -59,12 +91,42 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     init {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
-        applyDebugIntent(activity.intent)
+        if (BuildConfig.DEBUG) ContextCompat.registerReceiver(activity, debugReceiver,
+            IntentFilter("com.masharzy.bilaitube.DEBUG_UI"), ContextCompat.RECEIVER_EXPORTED)
+        handleIntent(activity.intent)
     }
 
     val view = ComposeView(activity).apply { setContent { RenderShell() } }
 
-    fun applyDebugIntent(intent: Intent) {
+    fun handleIntent(intent: Intent) {
+        if (intent.action == Intent.ACTION_VIEW) intent.dataString?.let(::openUrl)
+        applyDebugIntent(intent)
+        if (BuildConfig.DEBUG && intent.action == "com.masharzy.bilaitube.DEBUG_PLAY") {
+            intent.getStringExtra("bt.uri")?.let { play(it, "Sample video") }
+        }
+    }
+
+    fun dispose() {
+        if (BuildConfig.DEBUG) activity.unregisterReceiver(debugReceiver)
+        engine.detach()
+    }
+
+    private fun play(url: String, title: String) {
+        compact = false
+        overlay = null
+        video = url to title
+        engine.play(url)
+    }
+
+    private fun openUrl(url: String) {
+        val uri = Uri.parse(url.trim())
+        val host = uri.host.orEmpty().lowercase()
+        if (uri.scheme in listOf("http", "https") && (host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com"))) {
+            play(url.trim(), "")
+        } else toast = "Valid YouTube URL দাও"
+    }
+
+    private fun applyDebugIntent(intent: Intent) {
         if (!BuildConfig.DEBUG) return
         if (intent.hasExtra("bt.dark")) dark = intent.getBooleanExtra("bt.dark", dark)
         when (intent.getStringExtra("bt.accent")) {
@@ -75,13 +137,22 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun select(tab: Tab) {
+        if (this.tab == Tab.HOME && tab == Tab.HOME) scrollHome++
         this.tab = tab
         prefs.edit().putString("tab", tab.id).apply()
     }
 
     @Composable
     private fun RenderShell() {
-        BackHandler(enabled = tab != Tab.HOME) { select(Tab.HOME) }
+        val list = rememberLazyListState()
+        LaunchedEffect(scrollHome) { if (scrollHome > 0) list.scrollToItem(0) }
+        BackHandler(enabled = overlay != null || (video != null && !compact) || tab != Tab.HOME) {
+            when {
+                overlay != null -> overlay = null
+                video != null && !compact -> compact = true
+                else -> select(Tab.HOME)
+            }
+        }
         BilaiTheme(dark, red) {
             val colors = LocalBilaiColors.current
             val toastText = toast
@@ -110,7 +181,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                     Column(Modifier.fillMaxSize()) {
                         Header(
                             dark = dark,
-                            home = { select(Tab.HOME) },
+                            home = { homeFeed.select(0); scrollHome++; select(Tab.HOME) },
+                            openUrl = { overlay = "Open Any YouTube URL" },
                             theme = {
                                 dark = !dark
                                 prefs.edit().putBoolean("dark", dark).apply()
@@ -123,8 +195,23 @@ class BilaiShell(private val activity: ComponentActivity) {
                             },
                             notify = { toast = "No new notifications" },
                         )
-                        Box(Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}"))
+                        Box(Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}")) {
+                            if (tab == Tab.HOME) HomeFeed(homeFeed, list, ::play, { select(Tab.SHORTS) }) {
+                                menuVideo = it.url to it.name
+                                overlay = "Video options"
+                            }
+                        }
                         BottomNav(tab, ::select)
+                    }
+                    video?.let { (url, title) ->
+                        Watch(url, title, engine, compact, { compact = it },
+                            close = { engine.stop(); video = null; toast = "Mini-player dismissed" },
+                            playNext = ::play, overlay = { name ->
+                                if (name == "Share") share(url) else overlay = name
+                            })
+                    }
+                    overlay?.let { name ->
+                        Overlay(name, { overlay = null })
                     }
                     AnimatedVisibility(
                         toastText != null,
@@ -142,12 +229,53 @@ class BilaiShell(private val activity: ComponentActivity) {
             }
         }
     }
+    private fun share(url: String) {
+        val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url)
+        activity.startActivity(Intent.createChooser(intent, null))
+    }
+
+    @Composable
+    private fun Overlay(name: String, dismiss: () -> Unit) {
+        val p = LocalBilaiColors.current
+        val info by engine.current.collectAsState()
+        var input by remember(name) { mutableStateOf("") }
+        Dialog(onDismissRequest = dismiss) {
+            Column(Modifier.fillMaxWidth().background(p.sheetBg, RoundedCornerShape(16.dp)).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FeedText(name, 14, p.text, FontWeight.Bold)
+                when (name) {
+                    "Open Any YouTube URL" -> {
+                        FeedText("ভিডিও লিংক এখানে পেস্ট করো", 11, p.muted)
+                        BasicTextField(input, { input = it }, singleLine = true,
+                            textStyle = InputStyle(color = p.text, fontSize = 12.sp),
+                            modifier = Modifier.fillMaxWidth().background(p.elevated, RoundedCornerShape(12.dp)).padding(12.dp),
+                            decorationBox = { field ->
+                                Box {
+                                    if (input.isEmpty()) FeedText("https://www.youtube.com/watch?v=dQw4w9WgXcQ", 12, p.muted)
+                                    field()
+                                }
+                            })
+                        WatchPill("Play Video", p.onAccent, p.accent) { openUrl(input) }
+                    }
+                    "Description" -> Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                        BasicText(info?.description?.content.orEmpty(),
+                            style = TextStyle(color = p.text, fontSize = 12.sp))
+                    }
+                    "Video options" -> menuVideo?.let { (url, title) ->
+                        WatchPill("Play", p.onAccent, p.accent) { play(url, title) }
+                        WatchPill("Share", p.text, p.elevated) { dismiss(); share(url) }
+                    }
+                }
+                WatchPill("Close", p.text, p.elevated, click = dismiss)
+            }
+        }
+    }
 }
 
 private fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
 
 @Composable
-private fun Header(dark: Boolean, home: () -> Unit, theme: () -> Unit, accent: () -> Unit, notify: () -> Unit) {
+private fun Header(dark: Boolean, home: () -> Unit, openUrl: () -> Unit, theme: () -> Unit, accent: () -> Unit, notify: () -> Unit) {
     val p = LocalBilaiColors.current
     Box(Modifier.fillMaxWidth().height(48.dp).background(p.bg)) {
         Row(Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -162,7 +290,7 @@ private fun Header(dark: Boolean, home: () -> Unit, theme: () -> Unit, accent: (
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 HeaderButton(if (dark) Glyph.SUN else Glyph.MOON, "Toggle Light / Dark Mode", "btn_theme", p.text, theme)
                 HeaderButton(Glyph.PALETTE, "Switch accent", "btn_accent", p.accent, accent)
-                HeaderButton(Glyph.LINK, "Open YouTube URL", "btn_url", p.text)
+                HeaderButton(Glyph.LINK, "Open YouTube URL", "btn_url", p.text, openUrl)
                 HeaderButton(Glyph.BELL, "Notifications", "btn_notifications", p.text, notify, true)
                 HeaderButton(Glyph.SEARCH, "Search", "btn_search", p.text)
             }

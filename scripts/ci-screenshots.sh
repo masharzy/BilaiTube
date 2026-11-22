@@ -40,4 +40,29 @@ capture 04_home_light_red false red home
 capture 05_tab_shorts true amber shorts
 capture 06_tab_subs true amber subs
 capture 07_tab_you true amber you
+adb shell am force-stop "$pkg"
+adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4"
+sleep 3
+adb shell uiautomator dump /sdcard/bilai-watch.xml
+adb pull /sdcard/bilai-watch.xml "$out/08_watch_expanded.xml"
+grep -q 'player_surface' "$out/08_watch_expanded.xml"
+if grep -q "Couldn't play" "$out/08_watch_expanded.xml"; then exit 1; fi
+adb exec-out screencap -p > "$out/08_watch_expanded.png"
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_desc
+sleep 1
+adb exec-out screencap -p > "$out/12_desc_sheet.png"
+adb shell input keyevent BACK
+adb shell input swipe 585 300 585 1500 2500 &
+swipe_job=$!
+sleep 1
+adb exec-out screencap -p > "$out/09_watch_mid_drag.png"
+wait "$swipe_job"
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action minimize
+sleep 1
+adb shell uiautomator dump /sdcard/bilai-mini.xml
+adb pull /sdcard/bilai-mini.xml "$out/10_mini_br.xml"
+grep -q 'player_close' "$out/10_mini_br.xml"
+adb exec-out screencap -p > "$out/10_mini_br.png"
 adb logcat -d -v time > "$out/logcat.txt"

@@ -20,9 +20,15 @@ public final class MainActivity extends ComponentActivity {
     }
 
     @Override
+    protected void onDestroy() {
+        shell.dispose();
+        super.onDestroy();
+    }
+
+    @Override
     protected void onNewIntent(final Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        shell.applyDebugIntent(intent);
+        shell.handleIntent(intent);
     }
 }
