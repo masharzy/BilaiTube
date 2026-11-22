@@ -208,6 +208,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun signOut() {
+        fixtureSignedIn = false
         BilaiAccountStore.clear(activity)
         prefs.edit().remove("account_email").apply()
         localReplies.clear()
