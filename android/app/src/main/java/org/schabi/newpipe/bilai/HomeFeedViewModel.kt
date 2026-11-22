@@ -134,11 +134,13 @@ class HomeFeedViewModel : ViewModel() {
                     selected = 0
                     applyPage(FeedPage(home.items, home.continuation), append = false)
                 } else {
+                    android.util.Log.w("BilaiFeed", "home feed returned no items; using fallback")
                     useFallback()
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                android.util.Log.w("BilaiFeed", "home feed failed: $e")
                 try {
                     useFallback()
                 } catch (inner: CancellationException) {
@@ -154,7 +156,7 @@ class HomeFeedViewModel : ViewModel() {
 
     private suspend fun useFallback() {
         chipList = listOf(
-            FeedChip("Trending", Source.Trending),
+            FeedChip("Trending", Source.Query("trending videos today")),
             FeedChip("Music", Source.Query("music")),
             FeedChip("Gaming", Source.Query("gaming")),
             FeedChip("Live", Source.Query("live now")),
