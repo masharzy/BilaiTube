@@ -123,7 +123,11 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     var seekSide by remember(url) { mutableIntStateOf(0) }
     var seekCount by remember(url) { mutableIntStateOf(0) }
     var seekJob by remember { mutableStateOf<Job?>(null) }
-    fun seek(direction: Int) {
+    var seekPoint by remember(url) { mutableStateOf<Offset?>(null) }
+    var seekFlash by remember(url) { mutableIntStateOf(0) }
+    var lastSeekAt by remember(url) { mutableLongStateOf(0L) }
+    var pendingSeekPosition by remember(url) { mutableLongStateOf(0L) }
+    fun seek(direction: Int, finger: Offset? = null) {
         val state = latestPlayback
         if (state.durationMs <= 0) return
         val now = android.os.SystemClock.uptimeMillis()
