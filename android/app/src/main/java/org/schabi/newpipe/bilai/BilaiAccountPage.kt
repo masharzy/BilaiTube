@@ -21,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -110,7 +112,9 @@ internal fun AccountPage(close: () -> Unit, signedIn: () -> Unit) {
                 FeedText("If silent sign-in is unavailable, Google's page will open with the selected email prefilled.", 12, p.muted)
                 if (accounts.isEmpty()) FeedText("No accessible accounts. Use Android's account chooser.", 12, p.muted)
                 accounts.forEach { email ->
-                    Row(Modifier.fillMaxWidth().clickable { select(email) }.padding(vertical = 8.dp),
+                    Row(Modifier.fillMaxWidth().clickable { select(email) }
+                        .semantics { contentDescription = "Continue as $email" }
+                        .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.size(44.dp).background(p.accentSoft, CircleShape),
@@ -119,9 +123,8 @@ internal fun AccountPage(close: () -> Unit, signedIn: () -> Unit) {
                         }
                         Column(Modifier.weight(1f)) {
                             FeedText(email, 13, p.text, FontWeight.Medium)
-                            FeedText("Google account", 11, p.muted)
+                            FeedText("Continue as $email", 11, p.accent, FontWeight.SemiBold)
                         }
-                        FeedText("Continue ›", 12, p.accent, FontWeight.SemiBold)
                     }
                 }
                 if (fixture && selectedEmail != null) FeedText("Selected fixture: $selectedEmail", 12, p.muted)
