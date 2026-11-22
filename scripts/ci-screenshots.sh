@@ -118,7 +118,7 @@ capture_page library_watch_later open_watch_later 'Watch Later'
 capture_page library_playlists open_playlists Playlists
 capture_page library_downloads open_downloads 'Downloads'
 capture_page app_settings open_app_settings Appearance
-capture_page account_sign_in open_account 'Choose account'
+capture_page account_sign_in open_account 'Sign in with Google'
 # Evidence fixtures are debug-only; they do not log in or write real subscriptions.
 adb shell am force-stop "$pkg"
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
