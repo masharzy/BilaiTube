@@ -87,6 +87,24 @@ class HomeFeedViewModel : ViewModel() {
 
     private var started = false
 
+    /** Deterministic, debug-only Home evidence: two videos followed by the Shorts shelf. */
+    fun useReviewFixture() {
+        job?.cancel()
+        started = true
+        error = null
+        loading = false
+        chipList = listOf(FeedChip("All", Source.Home), FeedChip("Coding", Source.Query("coding")),
+            FeedChip("Travel", Source.Query("travel")))
+        selected = 0
+        publishChips()
+        val videos = WatchReviewFixture.stream("fixture").relatedItems.filterIsInstance<StreamInfoItem>()
+        val shorts = WatchReviewFixture.shorts("fixture")
+        shortItems = shorts
+        continuation = null
+        rows = videos.take(2).map { FeedRow.Video(it) } + FeedRow.Shorts(shorts) +
+            videos.drop(2).map { FeedRow.Video(it) }
+    }
+
     fun start() {
         if (started) return
         started = true
@@ -148,7 +166,9 @@ class HomeFeedViewModel : ViewModel() {
                     applyPage(FeedPage(home.items, home.continuation?.let { FeedCursor.Home(it) }
                         ?: FeedCursor.Search(Source.Query("trending videos today"), null)), append = false)
                 } else {
-                    android.util.Log.w("BilaiFeed", "home feed returned no items; using fallback")
+                    android.util.Log.w("BilaiFeed", "home feed returned no items; chips=" +
+                        home.chips.size + ", localization=" + NewPipe.getPreferredLocalization() +
+                        ", country=" + NewPipe.getPreferredContentCountry() + "; fallback to search")
                     useFallback()
                 }
             } catch (e: CancellationException) {
