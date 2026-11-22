@@ -263,7 +263,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
 
 @Composable
 internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signedIn: Boolean, accountEmail: String?,
-                    toggleDark: () -> Unit, toggleAccent: () -> Unit,
+                    toggleDark: () -> Unit, toggleAccent: () -> Unit, signOut: () -> Unit,
                     open: (String, String) -> Unit, show: (String) -> Unit,
                    skip: Boolean, toggleSkip: () -> Unit, hideShorts: Boolean, toggleHideShorts: () -> Unit) {
     val context = LocalContext.current
@@ -294,8 +294,8 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
                     FeedText(if (signedIn) accountEmail ?: "YouTube account" else "Guest Mode", 16, p.text, FontWeight.Bold)
                     FeedText(if (signedIn) "Synced via local SAPISID cookie" else "100% Local SQLite • Zero Server", 12, p.muted)
                 }
-                WatchPill(if (signedIn) "Manage" else "Sign in", p.text, p.elevated) {
-                    show(if (signedIn) "Settings" else "Sign in")
+                WatchPill(if (signedIn) "Sign Out" else "Sign In", p.text, p.elevated) {
+                    if (signedIn) signOut() else show("Sign in")
                 }
                 Box(Modifier.size(32.dp).clip(CircleShape).clickable { show("Settings") },
                     contentAlignment = Alignment.Center) {
@@ -348,7 +348,7 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
         item {
             Column(Modifier.background(p.elevated, RoundedCornerShape(16.dp))) {
                 ProfileRow("Offline Downloads", "", Glyph.DOWNLOAD) { show("Offline Downloads") }
-                ProfileRow("Watch Later", "", Glyph.FLOAT) { show("Watch Later") }
+                ProfileRow("Watch Later", "", Glyph.CLOCK) { show("Watch Later") }
                 ProfileRow("Playlists", "", Glyph.HOME) { show("Playlists") }
                 ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF", click = toggleSkip)
                 ProfileRow("Return YouTube Dislike", if (dislike) "ON" else "OFF") {
