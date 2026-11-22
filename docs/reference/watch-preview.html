@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BilaiTube — Watch Page & Player Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { darkMode: 'class', theme: { extend: {
+  fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+  colors: { bt: { bg:'#111010', surface:'#1B1917', pill:'#262320', border:'#2E2924', amber:'#F59E0B', amberHi:'#FBBF24', onAmber:'#1A1205', text:'#F5F5F4', muted:'#A8A29E' } }
+} } };
+</script>
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin:0; padding:0; height:100%; background:#080707; color:#F5F5F4; font-family:'Inter',system-ui,sans-serif; overflow:hidden; user-select:none; -webkit-user-select:none; }
+input, textarea { user-select:text; -webkit-user-select:text; }
+.no-scrollbar::-webkit-scrollbar { display:none; }
+.no-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
+.scroller { overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
+#phoneStage { position:relative; width:100%; max-width:430px; height:100dvh; max-height:880px; background:#111010; overflow:hidden; }
+@media (min-width:520px){
+  #phoneStage { height:min(92dvh,840px); border-radius:32px; border:1px solid rgba(255,255,255,.09); box-shadow:0 32px 90px rgba(0,0,0,.8); }
+}
+/* True fullscreen: the whole app surface becomes the screen, in landscape. Size/rotation set from JS. */
+#phoneStage.fs { position:fixed; left:0; top:0; max-width:none; max-height:none; border-radius:0; border:0; box-shadow:none; z-index:100; transform-origin:0 0; }
+#phoneStage.fs #vThumb { object-fit:contain; background:#000; }
+#phoneStage.fs > #homeHeader, #phoneStage.fs > #homeFeed, #phoneStage.fs > #bottomNav,
+#phoneStage.fs > #watchBackdrop, #phoneStage.fs > #watchDetailsLayer { display:none; }
+.touch-drag { touch-action:none; }
+.line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.line-clamp-3 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+
+@keyframes pulseSeek { 0%{transform:scale(.85);opacity:0} 30%{transform:scale(1.05);opacity:1} 100%{transform:scale(1.1);opacity:0} }
+.seek-flash { animation:pulseSeek .6s ease-out forwards; }
+@keyframes vidIn { from{scale:.94;opacity:.35} to{scale:1;opacity:1} }
+.vid-in { animation:vidIn .28s cubic-bezier(.22,1,.36,1); }
+@keyframes shimmer { 0%{background-position:-200px 0} 100%{background-position:200px 0} }
+.sk { background:linear-gradient(90deg,#262320 0,#34302c 50%,#262320 100%); background-size:400px 100%; animation:shimmer 1.2s linear infinite; }
+@keyframes likePop { 0%{scale:1} 35%{scale:1.5} 65%{scale:.92} 100%{scale:1} }
+.like-pop { animation:likePop .38s cubic-bezier(.34,1.56,.64,1); }
+@keyframes cmIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:none} }
+.cm-in { animation:cmIn .32s cubic-bezier(.22,1,.36,1); }
+@keyframes rowIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+.row-in { animation:rowIn .3s ease-out both; }
+
+/* player controls auto-hide */
+#videoSurface .ctl { transition:opacity .22s ease; }
+#videoSurface.hide-ctl .ctl { opacity:0; pointer-events:none; }
+#videoSurface.mini #vCenterControls, #videoSurface.mini #vTimeRow, #videoSurface.mini #vFullTopBar, #videoSurface.mini #dragHandlePill { display:none; }
+#videoSurface:not(.mini) #vMiniCloseBtn, #videoSurface:not(.mini) #vMiniPlayBtn { display:none; }
+#videoSurface.mini .ctl { opacity:1 !important; pointer-events:auto; }
+#videoSurface.mini #vBottomBar { padding-top:0; padding-bottom:0; padding-left:0; padding-right:0; background:none; }
+#videoSurface.mini #vSeek { height:3px; padding:0; }
+#videoSurface.mini #vSeekTrack { height:3px; border-radius:0; }
+#videoSurface.mini #vSeekThumb { display:none; }
+
+/* animated sheets */
+.sheet-backdrop { opacity:0; pointer-events:none; transition:opacity .28s cubic-bezier(.22,1,.36,1); }
+.sheet-backdrop.open { opacity:1; pointer-events:auto; }
+.sheet-panel-bottom { transform:translate3d(0,105%,0); transition:transform .38s cubic-bezier(.22,1,.36,1); will-change:transform; }
+.sheet-backdrop.open .sheet-panel-bottom { transform:translate3d(0,0,0); }
+.sheet-panel-bottom.dragging { transition:none !important; }
+.sheet-panel-right { transform:translate3d(105%,0,0); transition:transform .34s cubic-bezier(.22,1,.36,1); }
+.sheet-backdrop.open .sheet-panel-right { transform:translate3d(0,0,0); }
+
+.replies { display:grid; grid-template-rows:0fr; transition:grid-template-rows .3s cubic-bezier(.22,1,.36,1); }
+.replies.open { grid-template-rows:1fr; }
+.replies > div { overflow:hidden; }
+.chev { transition:transform .25s; }
+.open-chev .chev { transform:rotate(180deg); }
+</style>
+</head>
+<body class="flex items-center justify-center w-screen bg-[#080707]" style="min-height:100dvh">
+<div class="w-full h-full flex items-center justify-center">
+<div id="phoneStage" class="flex flex-col">
+
+  <!-- Header -->
+  <header id="homeHeader" class="h-[52px] px-3.5 flex items-center justify-between gap-2 bg-bt-bg border-b border-white/5 shrink-0 z-10">
+    <div class="flex items-center gap-2">
+      <svg viewBox="0 0 108 108" class="w-7 h-7 shrink-0" aria-hidden="true">
+        <rect x="4" y="4" width="100" height="100" rx="24" fill="#1B1917" stroke="#2E2924" stroke-width="3"/>
+        <path fill="#F59E0B" d="M35,49 L37,34 Q37.5,30 41,32 L51,41 H58 L68,32 Q72,30 72,35 L74,49 Q80,53 80,61 V65 Q80,77 68,77 H40 Q28,77 28,65 V61 Q28,53 35,49 Z"/>
+        <path fill="#1A1205" d="M49,51 Q47,50 47,53 V67 Q47,70 50,69 L64,61 Q66,60 64,58 Z"/>
+      </svg>
+      <span class="font-extrabold text-[18px] tracking-tight text-bt-text">BilaiTube</span>
+    </div>
+    <div class="flex items-center gap-0.5">
+      <button id="urlModalOpenBtn" class="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-bt-text" aria-label="Open link"><i data-lucide="link-2" class="w-[19px] h-[19px]"></i></button>
+      <button class="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-bt-text" aria-label="Search"><i data-lucide="search" class="w-[19px] h-[19px]"></i></button>
+    </div>
+  </header>
+
+  <!-- Home feed -->
+  <div id="homeFeed" class="flex-1 scroller no-scrollbar bg-bt-bg">
+    <div id="categoryChips" class="flex items-center gap-2 px-3 py-2.5 overflow-x-auto no-scrollbar sticky top-0 bg-bt-bg/95 backdrop-blur-md z-10 border-b border-white/5"></div>
+    <div id="feedList"></div>
+    <div id="feedSentinel" class="h-10"></div>
+    <div class="h-4"></div>
+  </div>
+
+  <!-- Bottom nav -->
+  <nav id="bottomNav" class="h-14 bg-bt-surface/95 border-t border-white/5 grid grid-cols-3 items-center shrink-0 z-10">
+    <button data-btab="home" class="btab-btn flex flex-col items-center justify-center gap-0.5"><i data-lucide="home" class="w-5 h-5"></i><span class="text-[10px]">Home</span></button>
+    <button data-btab="subs" class="btab-btn flex flex-col items-center justify-center gap-0.5"><i data-lucide="rss" class="w-5 h-5"></i><span class="text-[10px]">Subscriptions</span></button>
+    <button data-btab="library" class="btab-btn flex flex-col items-center justify-center gap-0.5"><i data-lucide="library" class="w-5 h-5"></i><span class="text-[10px]">Library</span></button>
+  </nav>
+
+  <!-- Watch backdrop + details -->
+  <div id="watchBackdrop" class="hidden absolute inset-0 bg-bt-bg z-20 pointer-events-none" style="opacity:0"></div>
+  <div id="watchDetailsLayer" class="hidden scroller no-scrollbar absolute left-0 right-0 bottom-0 z-20 bg-bt-bg" style="top:242px;opacity:0">
+    <div class="px-3.5 pt-3 pb-24 space-y-3.5">
+      <div id="descTrigger" class="cursor-pointer">
+        <h1 id="wTitle" class="text-[17px] font-bold text-bt-text leading-snug"></h1>
+        <p class="text-xs text-bt-muted mt-1"><span id="wMetaText"></span> <span class="text-bt-text font-semibold">...more</span></p>
+      </div>
+
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div id="wAvatar" class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"></div>
+          <div class="min-w-0">
+            <p id="wChannel" class="text-sm font-semibold text-bt-text truncate"></p>
+            <p id="wSubs" class="text-[11px] text-bt-muted"></p>
+          </div>
+        </div>
+        <button id="wSubBtn" class="px-4 py-1.5 rounded-full text-xs font-bold transition shrink-0"></button>
+      </div>
+
+      <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+        <div class="flex items-center rounded-full bg-bt-pill shrink-0 overflow-hidden">
+          <button id="wLikeBtn" class="px-3.5 py-2 flex items-center gap-1.5 text-xs font-semibold active:bg-white/10"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span id="wLikeCount">0</span></button>
+          <div class="w-px h-4 bg-white/15"></div>
+          <button id="wDislikeBtn" class="px-3 py-2 flex items-center gap-1.5 text-xs font-medium active:bg-white/10"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span id="wDislikeCount">0</span></button>
+        </div>
+        <button id="wShareBtn" class="px-3.5 py-2 rounded-full bg-bt-pill text-xs font-semibold flex items-center gap-1.5 shrink-0"><i data-lucide="share-2" class="w-3.5 h-3.5"></i><span>Share</span></button>
+        <button id="wDownloadBtn" class="px-3.5 py-2 rounded-full bg-bt-pill text-xs font-semibold flex items-center gap-1.5 shrink-0"><i data-lucide="download" class="w-3.5 h-3.5"></i><span id="wDownloadText">Download</span></button>
+        <button id="wMiniQuickBtn" class="px-3.5 py-2 rounded-full bg-bt-amber/15 text-xs font-semibold text-bt-amber flex items-center gap-1.5 shrink-0"><i data-lucide="minimize-2" class="w-3.5 h-3.5"></i><span>Float</span></button>
+      </div>
+
+      <div id="commentsPreviewCard" class="p-3 rounded-2xl bg-bt-surface cursor-pointer active:bg-bt-pill/80 transition">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-xs font-bold">Comments <span id="wCommentCount" class="font-normal text-bt-muted"></span></span>
+          <i data-lucide="chevrons-up-down" class="w-3.5 h-3.5 text-bt-muted"></i>
+        </div>
+        <div class="flex items-center gap-2">
+          <div id="wTopAvatar" class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"></div>
+          <p id="wTopComment" class="text-xs text-bt-text/90 line-clamp-2 leading-snug"></p>
+        </div>
+      </div>
+
+      <div class="space-y-3 pt-1">
+        <p class="text-xs font-bold uppercase tracking-wider text-bt-muted">Up Next</p>
+        <div id="wRelatedList" class="space-y-3"></div>
+        <div id="relSentinel" class="h-10"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video surface -->
+  <div id="videoSurface" class="hidden absolute z-30 bg-black overflow-hidden touch-drag" style="left:0;top:0;width:100%;height:242px">
+    <img id="vThumb" src="" alt="" class="w-full h-full object-cover pointer-events-none" />
+
+    <div id="dragHandlePill" class="ctl absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-white/45 pointer-events-none"></div>
+
+    <div id="vFullTopBar" class="ctl absolute top-2.5 inset-x-3 flex items-center justify-between gap-2 z-10">
+      <div class="flex items-center gap-2 min-w-0">
+        <button id="vDownBtn" class="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white shrink-0"><i data-lucide="chevron-down" class="w-4 h-4"></i></button>
+        <div id="fsTitleWrap" class="hidden min-w-0">
+          <p id="fsTitleText" class="text-xs font-bold text-white truncate"></p>
+          <p id="fsChannelText" class="text-[10px] text-white/70 truncate"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button id="vCaptionsBtn" class="h-8 px-2.5 rounded-full bg-black/50 text-[10px] font-bold text-white flex items-center gap-1"><i data-lucide="subtitles" class="w-3.5 h-3.5"></i><span id="vCaptionsLabel">CC</span></button>
+        <button id="vSettingsBtn" class="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white"><i data-lucide="settings" class="w-4 h-4"></i></button>
+      </div>
+    </div>
+
+    <div id="vCenterControls" class="ctl absolute inset-0 flex items-center justify-center gap-7 pointer-events-none">
+      <button id="vRewBtn" class="pointer-events-auto w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center"><i data-lucide="rotate-ccw" class="w-4 h-4"></i></button>
+      <button id="vPlayBtn" class="pointer-events-auto w-12 h-12 rounded-full bg-black/55 border border-white/20 flex items-center justify-center text-white">
+        <i data-lucide="pause" class="w-5 h-5 ic-pause"></i><i data-lucide="play" class="w-5 h-5 ic-play hidden"></i>
+      </button>
+      <button id="vFwdBtn" class="pointer-events-auto w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center"><i data-lucide="rotate-cw" class="w-4 h-4"></i></button>
+    </div>
+
+    <button id="vMiniCloseBtn" class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/75 text-white flex items-center justify-center z-20"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+    <button id="vMiniPlayBtn" class="absolute bottom-2 left-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center z-20">
+      <i data-lucide="pause" class="w-3 h-3 ic-pause"></i><i data-lucide="play" class="w-3 h-3 ic-play hidden"></i>
+    </button>
+
+    <div id="seekFlashBadge" class="hidden absolute top-1/2 -translate-y-1/2 h-10 px-3 rounded-full bg-black/70 text-white text-xs font-bold items-center gap-1 pointer-events-none">
+      <i data-lucide="fast-forward" class="w-3.5 h-3.5 text-bt-amber"></i><span id="seekFlashText">+10s</span>
+    </div>
+
+    <div id="vBottomBar" class="ctl absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/45 to-transparent pt-6 pb-1.5 px-3 z-10">
+      <div id="vTimeRow" class="flex items-center justify-between text-[11px] font-mono text-white/95">
+        <div class="flex items-center gap-2">
+          <span id="vTimeLabel">00:00 / 00:00</span>
+          <span id="vQualityPill" class="px-1.5 py-0.5 rounded bg-white/15 text-[9px] font-sans font-semibold text-bt-amberHi"></span>
+        </div>
+        <button id="vFullscreenBtn" class="w-8 h-8 rounded-lg flex items-center justify-center text-white">
+          <i data-lucide="maximize" class="w-4 h-4 ic-max"></i><i data-lucide="minimize" class="w-4 h-4 ic-min hidden"></i>
+        </button>
+      </div>
+      <div id="vSeek" class="w-full h-5 flex items-center relative" style="touch-action:none">
+        <div id="vSeekTrack" class="w-full h-1 bg-white/25 rounded-full relative">
+          <div id="vBuffer" class="h-full bg-white/35 absolute left-0 top-0 rounded-full" style="width:30%"></div>
+          <div id="vProgressFill" class="h-full bg-bt-amber absolute left-0 top-0 rounded-full" style="width:0%"></div>
+          <div id="vSponsorBar" class="h-full bg-emerald-400 absolute top-0" style="left:38%;width:10%"></div>
+          <div id="vSeekThumb" class="w-3 h-3 rounded-full bg-bt-amber absolute top-1/2 -translate-y-1/2 -translate-x-1/2" style="left:0%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings: portrait bottom sheet -->
+  <div id="portraitSettingsBackdrop" class="sheet-backdrop absolute inset-0 z-[60] bg-black/60 flex items-end">
+    <div class="sheet-panel-bottom w-full rounded-t-3xl bg-bt-surface border-t border-white/10 p-4 pb-6 space-y-3">
+      <div class="w-10 h-1 rounded-full bg-white/25 mx-auto"></div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-bold">Playback settings</span>
+        <button id="closePortraitSettingsBtn" class="p-1 rounded-full text-bt-muted"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div id="portraitSettingsRows" class="space-y-1"></div>
+    </div>
+  </div>
+  <!-- Settings: landscape right drawer -->
+  <div id="fsSettingsBackdrop" class="sheet-backdrop absolute inset-0 z-[60] bg-black/55 flex justify-end">
+    <div class="sheet-panel-right w-72 max-w-[75%] h-full bg-bt-surface/95 border-l border-white/10 p-4 scroller no-scrollbar">
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+        <span class="text-sm font-bold">Playback settings</span>
+        <button id="closeFsSettingsBtn" class="p-1 rounded-full text-bt-muted"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div id="fsSettingsRows" class="space-y-1"></div>
+    </div>
+  </div>
+
+  <!-- Description / Comments sheet -->
+  <div id="sheetBackdrop" class="sheet-backdrop absolute inset-x-0 bottom-0 z-40 bg-black/40 flex items-end" style="top:242px">
+    <div id="sheetPanel" class="sheet-panel-bottom w-full h-full bg-bt-surface border-t border-white/10 rounded-t-2xl flex flex-col shadow-2xl">
+      <div id="sheetHead" class="shrink-0 touch-drag cursor-grab">
+        <div class="w-10 h-1 rounded-full bg-white/25 mx-auto mt-2"></div>
+        <div class="px-4 pt-2 pb-2 flex items-center justify-between">
+          <span id="sheetHeading" class="text-[15px] font-bold"></span>
+          <button id="closeSheetBtn" class="p-1.5 rounded-full text-bt-muted active:bg-white/10"><i data-lucide="x" class="w-[18px] h-[18px]"></i></button>
+        </div>
+        <div id="sheetSortRow" class="hidden px-4 pb-2 flex items-center gap-2">
+          <button data-sort="top" class="sort-btn px-3 py-1.5 rounded-lg text-xs font-semibold">Top</button>
+          <button data-sort="new" class="sort-btn px-3 py-1.5 rounded-lg text-xs font-semibold">Newest</button>
+        </div>
+        <div class="border-b border-white/10"></div>
+      </div>
+      <div id="sheetBody" class="scroller no-scrollbar flex-1"></div>
+    </div>
+  </div>
+
+  <!-- URL modal -->
+  <div id="urlModal" class="hidden absolute inset-0 z-[70] bg-black/75 flex items-center justify-center p-4">
+    <div class="w-full rounded-2xl bg-bt-surface border border-white/10 p-4 space-y-3 shadow-2xl">
+      <div class="flex items-center justify-between"><h3 class="text-sm font-bold">Open any YouTube link</h3><button id="closeUrlModalBtn" class="text-bt-muted"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+      <input id="ytUrlInput" type="text" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ" class="w-full px-3 py-2 rounded-xl bg-bt-bg border border-white/10 text-xs focus:outline-none focus:border-bt-amber" />
+      <div class="flex justify-end gap-2">
+        <button id="cancelUrlBtn" class="px-3 py-1.5 rounded-full text-xs text-bt-muted">Cancel</button>
+        <button id="loadUrlBtn" class="px-4 py-1.5 rounded-full text-xs font-bold bg-bt-amber text-bt-onAmber">Play</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden absolute bottom-20 left-1/2 -translate-x-1/2 z-[80] px-3.5 py-1.5 rounded-full bg-bt-surface border border-white/15 text-xs font-semibold shadow-xl whitespace-nowrap"></div>
+</div>
+</div>
+
+<script>
+const THUMBS = ["data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23555'/></svg>"];
+
+// ===================== DATA (mock, endless generators) =====================
+const CATS = ['All','Coding','Tech','Travel','Documentary','Music','Gaming','Live'];
+const CHANNELS = [
+  { name:'DevForge Labs', avatar:'DF', color:'bg-amber-600', subs:'284K subscribers' },
+  { name:'Frames of Bengal', avatar:'FB', color:'bg-orange-600', subs:'510K subscribers' },
+  { name:'Minimal Tech Daily', avatar:'MT', color:'bg-emerald-600', subs:'890K subscribers' },
+  { name:'EarthLens 4K', avatar:'EL', color:'bg-sky-600', subs:'1.9M subscribers' },
+  { name:'Pixel Orchard', avatar:'PO', color:'bg-indigo-600', subs:'96K subscribers' },
+  { name:'Night Owl Radio', avatar:'NO', color:'bg-rose-600', subs:'2.3M subscribers' },
+  { name:'Kernel Kitchen', avatar:'KK', color:'bg-teal-600', subs:'412K subscribers' },
+  { name:'Wander Notes', avatar:'WN', color:'bg-fuchsia-600', subs:'178K subscribers' }
+];
+const TITLES = {
+  Coding:['Building a 60FPS Spring-Physics Mini-Player on Android','Jetpack Compose Animations You Are Not Using Yet','Kotlin Coroutines Explained With Real Bugs','Why Your Lazy List Janks (and the Fix)','Writing a Tiny Video Player From Scratch'],
+  Tech:['Open-Source Android Apps in 2026: Best Ad-Free Alternatives','Local-First Software: Why It Is Winning','I Replaced Every Subscription With Self-Hosted Tools','Budget Phones Compared: What You Really Get','The Quiet Revolution in Battery Tech'],
+  Travel:['Rainy Dhaka at Twilight — 4K Street Walk & Ambient Sound','72 Hours in Sylhet: Tea Gardens and Waterfalls','Old Town Night Market Food Tour','Train Across the Country: Sleeper Class Diaries','Hidden Beaches You Can Only Reach on Foot'],
+  Documentary:['Above the Clouds: 4K HDR Sunrise Over the Himalayas','The River That Feeds a Nation','Inside the Last Wooden Boat Yard','How Monsoons Shape a Continent','A Year With the Mangrove Forest'],
+  Music:['Lo-fi Rain Mix for Studying (2 Hours)','Acoustic Sessions — Live in a Tiny Room','Retro Synthwave Drive Mix','Classical Piano for Deep Focus','Bengali Folk Fusion — Full Album'],
+  Gaming:['Speedrun Strats That Broke the Game','Cozy Farming Game Hidden Features','Top 10 Indie Games of the Year','Retro Console Restoration, Start to Finish','Co-op Puzzle Walkthrough: No Commentary'],
+  Live:['LIVE: City Skyline Webcam & Chill Beats','LIVE: Space Station Earth View','LIVE: Late Night Coding Stream','LIVE: Coastal Storm Watch','LIVE: Lofi Radio — Beats to Relax To']
+};
+const VMAP = {};
+let gid = 0;
+const pick = a => a[Math.floor(Math.random()*a.length)];
+function makeVideo(cat, onlyChannels) {
+  const n = ++gid;
+  const realCat = (!cat || cat==='All') ? pick(Object.keys(TITLES)) : cat;
+  const ch = onlyChannels && onlyChannels.length ? CHANNELS.find(c=>c.name===pick(onlyChannels)) : pick(CHANNELS);
+  const dur = 180 + Math.floor(Math.random()*1500);
+  const views = Math.random()<.5 ? Math.floor(5+Math.random()*900)+'K views' : (1+Math.random()*8).toFixed(1)+'M views';
+  const v = {
+    id:'g'+n, title:pick(TITLES[realCat]||TITLES.Tech), channel:ch.name, subs:ch.subs, avatar:ch.avatar, avatarColor:ch.color,
+    views, age: pick(['3 hours ago','1 day ago','2 days ago','5 days ago','1 week ago','3 weeks ago','2 months ago']),
+    date:'Nov '+(1+n%28)+', 2026', durationSec:dur, duration:formatTime(dur), cat:realCat,
+    likes: Math.floor(800+Math.random()*60000), dislikes: Math.floor(10+Math.random()*600),
+    commentCount: Math.floor(40+Math.random()*3000),
+    description:'Thanks for watching!\n\nChapters\n0:00 Intro\n2:10 Main part\n7:45 Final thoughts\n\nFollow along and let me know what you want to see next.\n#bilaitube #opensource',
+    thumb: THUMBS[n % THUMBS.length]
+  };
+  VMAP[v.id] = v;
+  return v;
+}
+function formatTime(sec){ sec=Math.max(0,Math.floor(sec)); const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60; return (h?h+':'+String(m).padStart(2,'0'):String(m).padStart(2,'0'))+':'+String(s).padStart(2,'0'); }
+function formatCount(n){ if(n>=1e9) return (n/1e9).toFixed(1)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(n>=1e4?0:1)+'K'; return String(n); }
+
+const QUALITIES=['2160p 4K','1080p60','720p','480p'], SPEEDS=[0.75,1.0,1.25,1.5,2.0], CAPTIONS=['Off','English','বাংলা (Auto)'];
+const state = { cat:'All', tab:'home', current:null, isPlaying:false, progressPct:0, qualityIdx:1, speedIdx:1, captionIdx:0, sponsorBlock:true, loopVideo:false,
+  liked:new Set(), disliked:new Set(), subs:new Set(['DevForge Labs']), downloads:new Set(), settingsOpen:false, sheetMode:null };
+
+// ===================== ELEMENTS =====================
+const $ = id => document.getElementById(id);
+const stageEl=$('phoneStage'), videoEl=$('videoSurface'), watchBackdrop=$('watchBackdrop'), watchDetails=$('watchDetailsLayer');
+const sheetBackdrop=$('sheetBackdrop'), sheetPanel=$('sheetPanel');
+
+// ===================== PHYSICS (k=320, c=28 — same constants as the app spec) =====================
+const K=320, C=28, FS_TRIGGER=14;
+const physics = { mode:'closed', morph:0, morphTarget:0, morphVel:0, pullPx:0, miniX:0, miniY:0, miniTargetX:0, miniTargetY:0, miniVx:0, miniVy:0,
+  corner:'BR', dragging:false, intent:null, startX:0, startY:0, startMorph:0, startMiniX:0, startMiniY:0, moved:0, samples:[], raf:null, lastTs:0, rawLocal:{x:0,y:0} };
+
+// Phones held upright simulate the physical rotation; desktop windows just fill the window.
+const coarse = matchMedia('(pointer:coarse)').matches;
+const isRotated = () => stageEl.classList.contains('fs') && coarse && innerWidth < innerHeight;
+function toLocal(dx, dy){ return isRotated() ? { x:dy, y:-dx } : { x:dx, y:dy }; }
+
+function dims(){
+  const w=stageEl.offsetWidth, h=stageEl.offsetHeight;
+  const fullH=Math.round(w*9/16), miniW=Math.round(Math.min(186,w*.47)), miniH=Math.round(miniW*9/16);
+  return { w,h,fullH,miniW,miniH,pad:12,topSafe:58,bottomSafe:68 };
+}
+function corners(d){ return {
+  TL:{x:d.pad,y:d.topSafe}, TR:{x:d.w-d.miniW-d.pad,y:d.topSafe},
+  BL:{x:d.pad,y:d.h-d.miniH-d.bottomSafe}, BR:{x:d.w-d.miniW-d.pad,y:d.h-d.miniH-d.bottomSafe} }; }
+function nearestCorner(px,py,d){ const cs=corners(d); let best='BR',bd=1e9; for(const k in cs){ const dd=Math.hypot(cs[k].x-px,cs[k].y-py); if(dd<bd){bd=dd;best=k;} } return {key:best,...cs[best]}; }
+
+function recordSample(x,y,t){ physics.samples.push({x,y,t}); const cut=t-90; while(physics.samples.length>2&&physics.samples[0].t<cut) physics.samples.shift(); }
+function velocity(){ const s=physics.samples; if(s.length<2) return {x:0,y:0}; const a=s[0], b=s[s.length-1], dt=(b.t-a.t)/1000; if(dt<=.004) return {x:0,y:0}; const l=toLocal((b.x-a.x)/dt,(b.y-a.y)/dt); return l; }
+
+let uiCache = {};
+function setUi(key,val,fn){ if(uiCache[key]!==val){ uiCache[key]=val; fn(val); } }
+
+function applyGeometry(){
+  if(physics.mode==='closed') return;
+  const d=dims();
+  if(physics.mode==='fullscreen'){
+    const pull=Math.max(0,physics.pullPx);
+    videoEl.style.left='0px'; videoEl.style.top='0px';
+    videoEl.style.width=d.w+'px'; videoEl.style.height=d.h+'px';
+    videoEl.style.transform=`translate3d(0,${(pull*.5).toFixed(1)}px,0) scale(${Math.max(.95,1-pull/420).toFixed(3)})`;
+    videoEl.style.borderRadius=pull>2?'12px':'0px'; videoEl.style.boxShadow='none';
+    setUi('mini',false,v=>videoEl.classList.toggle('mini',v));
+    setUi('fsUi',true,()=>{ $('fsTitleWrap').classList.remove('hidden'); $('dragHandlePill').classList.add('hidden'); setIcon('vFullscreenBtn','min'); });
+    return;
+  }
+  const t=Math.max(0,Math.min(1.12,physics.morph)), m=Math.max(0,Math.min(1,t));
+  const lift = physics.intent==='fs_up' ? -Math.min(physics.pullPx,24)*.4 : 0;
+  videoEl.style.left='0px'; videoEl.style.top='0px';
+  videoEl.style.width=(d.w+(d.miniW-d.w)*m).toFixed(2)+'px';
+  videoEl.style.height=(d.fullH+(d.miniH-d.fullH)*m).toFixed(2)+'px';
+  videoEl.style.transform=`translate3d(${(physics.miniX*t).toFixed(2)}px,${(physics.miniY*t+lift).toFixed(2)}px,0)`;
+  videoEl.style.borderRadius=(14*m).toFixed(1)+'px';
+  videoEl.style.boxShadow = m>.05 ? `0 ${Math.round(16*m)}px ${Math.round(36*m)}px rgba(0,0,0,${(.55*m).toFixed(2)})` : 'none';
+  const op=Math.max(0,1-m*1.45);
+  watchBackdrop.style.opacity=op.toFixed(3); watchDetails.style.opacity=op.toFixed(3);
+  watchDetails.style.top=d.fullH+'px'; watchDetails.style.transform=`translate3d(0,${(m*90).toFixed(1)}px,0)`;
+  watchDetails.style.pointerEvents = m<.2?'auto':'none';
+  setUi('mini',m>.55,v=>videoEl.classList.toggle('mini',v));
+  setUi('fsUi',false,()=>{ $('fsTitleWrap').classList.add('hidden'); $('dragHandlePill').classList.remove('hidden'); setIcon('vFullscreenBtn','max'); });
+}
+function setIcon(btnId,which){ const b=$(btnId); b.querySelector('.ic-max').classList.toggle('hidden',which!=='max'); b.querySelector('.ic-min').classList.toggle('hidden',which!=='min'); }
+
+function step(dt){
+  let active=false;
+  if(!physics.dragging){
+    if(Math.abs(physics.pullPx)>.2){ physics.pullPx*=Math.pow(.02,dt*10); active=true; } else physics.pullPx=0;
+    const a=-K*(physics.morph-physics.morphTarget)-C*physics.morphVel; physics.morphVel+=a*dt; physics.morph+=physics.morphVel*dt;
+    if(Math.abs(physics.morph-physics.morphTarget)>.0015||Math.abs(physics.morphVel)>.005) active=true; else { physics.morph=physics.morphTarget; physics.morphVel=0; }
+    const ax=-K*(physics.miniX-physics.miniTargetX)-C*physics.miniVx, ay=-K*(physics.miniY-physics.miniTargetY)-C*physics.miniVy;
+    physics.miniVx+=ax*dt; physics.miniVy+=ay*dt; physics.miniX+=physics.miniVx*dt; physics.miniY+=physics.miniVy*dt;
+    if(Math.abs(physics.miniX-physics.miniTargetX)>.3||Math.abs(physics.miniY-physics.miniTargetY)>.3||Math.abs(physics.miniVx)>1.5||Math.abs(physics.miniVy)>1.5) active=true;
+    else { physics.miniX=physics.miniTargetX; physics.miniY=physics.miniTargetY; physics.miniVx=0; physics.miniVy=0; }
+  } else active=true;
+  applyGeometry();
+  return active;
+}
+function loop(){
+  if(physics.raf) return; physics.lastTs=performance.now();
+  const tick=now=>{ const dt=Math.min(.032,(now-physics.lastTs)/1000); physics.lastTs=now;
+    if(step(dt)&&physics.mode!=='closed') physics.raf=requestAnimationFrame(tick); else physics.raf=null; };
+  physics.raf=requestAnimationFrame(tick);
+}
+
+function goExpanded(v=0){ closeSettings(); physics.mode='expanded'; physics.morphTarget=0; physics.morphVel=v; physics.pullPx=0; physics.intent=null; loop(); pokeControls(); }
+function goMinimized(v=0){ closeSettings(); closeSheet(); const d=dims(); const t=corners(d)[physics.corner]||corners(d).BR;
+  physics.mode='minimized'; physics.morphTarget=1; physics.morphVel=v; physics.miniTargetX=t.x; physics.miniTargetY=t.y; physics.pullPx=0; physics.intent=null; loop(); }
+
+// ---- True fullscreen (landscape) ----
+function layoutFs(){
+  const vw=innerWidth, vh=innerHeight;
+  stageEl.style.left='0px'; stageEl.style.top='0px';
+  if(vw>=vh || !coarse){ stageEl.style.width=vw+'px'; stageEl.style.height=vh+'px'; stageEl.style.transform='none'; }
+  else { stageEl.style.width=vh+'px'; stageEl.style.height=vw+'px'; stageEl.style.transform=`translateX(${vw}px) rotate(90deg)`; }
+}
+function goFullscreen(){
+  closeSettings(); closeSheet();
+  physics.mode='fullscreen'; physics.pullPx=0; physics.intent=null; physics.morph=0; physics.morphTarget=0; physics.morphVel=0;
+  stageEl.classList.add('fs'); layoutFs();
+  try{ const p=document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen(); p&&p.catch&&p.catch(()=>{}); }catch(e){}
+  try{ const p=screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape'); p&&p.catch&&p.catch(()=>{}); }catch(e){}
+  videoEl.classList.remove('vid-in'); void videoEl.offsetWidth; videoEl.classList.add('vid-in');
+  uiCache={}; applyGeometry(); pokeControls();
+}
+function exitFullscreen(){
+  if(physics.mode!=='fullscreen') return;
+  closeSettings();
+  stageEl.classList.remove('fs'); stageEl.style.width=''; stageEl.style.height=''; stageEl.style.transform=''; stageEl.style.left=''; stageEl.style.top='';
+  try{ if(document.fullscreenElement) document.exitFullscreen().catch(()=>{}); }catch(e){}
+  try{ screen.orientation&&screen.orientation.unlock&&screen.orientation.unlock(); }catch(e){}
+  physics.mode='expanded'; physics.pullPx=0; physics.intent=null; physics.morph=0; physics.morphTarget=0;
+  videoEl.classList.remove('vid-in'); void videoEl.offsetWidth; videoEl.classList.add('vid-in');
+  uiCache={}; applyGeometry(); loop(); pokeControls();
+}
+addEventListener('resize',()=>{ if(physics.mode==='fullscreen'){ layoutFs(); applyGeometry(); } else if(physics.mode!=='closed'){ applyGeometry(); } });
+document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && physics.mode==='fullscreen' && stageEl.dataset.nativeFs==='1'){ exitFullscreen(); } if(document.fullscreenElement) stageEl.dataset.nativeFs='1'; else stageEl.dataset.nativeFs=''; });
+addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(physics.mode==='fullscreen') exitFullscreen(); else if(state.settingsOpen) closeSettings(); else if(state.sheetMode) closeSheet(); } });
+
+// ---- Controls auto-hide & double-tap seek ----
+let ctlTimer=null;
+function pokeControls(){ videoEl.classList.remove('hide-ctl'); clearTimeout(ctlTimer);
+  if(state.isPlaying && physics.mode!=='minimized' && !state.settingsOpen) ctlTimer=setTimeout(()=>videoEl.classList.add('hide-ctl'),3000); }
+let lastTap={t:0,side:0}, tapTimer=null, seekAccum=0, seekAccumTimer=null;
+function handleSurfaceTap(e){
+  const r=videoEl.getBoundingClientRect();
+  let frac = isRotated() ? (e.clientY-r.top)/r.height : (e.clientX-r.left)/r.width;
+  const side = frac<.5?-1:1, now=performance.now();
+  if(now-lastTap.t<300 && lastTap.side===side){
+    clearTimeout(tapTimer); lastTap.t=0;
+    seekBy(side*10);
+    seekAccum += 10; clearTimeout(seekAccumTimer); seekAccumTimer=setTimeout(()=>seekAccum=0,700);
+    flashSeek(side, seekAccum);
+  } else {
+    lastTap={t:now,side};
+    clearTimeout(tapTimer);
+    tapTimer=setTimeout(()=>{ if(videoEl.classList.contains('hide-ctl')) pokeControls(); else { videoEl.classList.add('hide-ctl'); clearTimeout(ctlTimer); } },300);
+  }
+}
+function seekBy(sec){ if(!state.current) return; state.progressPct=Math.max(0,Math.min(99.5,state.progressPct+sec/state.current.durationSec*100)); updatePlaybackUI(); }
+function flashSeek(side,total){
+  const b=$('seekFlashBadge'); b.style.left = side<0?'12%':'auto'; b.style.right = side>0?'12%':'auto';
+  $('seekFlashText').textContent=(side<0?'−':'+')+total+'s';
+  b.classList.remove('hidden'); b.classList.add('flex'); b.classList.remove('seek-flash'); void b.offsetWidth; b.classList.add('seek-flash');
+  clearTimeout(b._t); b._t=setTimeout(()=>{ b.classList.add('hidden'); b.classList.remove('flex'); },620);
+}
+
+// ---- Pointer gestures on the video surface ----
+videoEl.addEventListener('pointerdown',e=>{
+  if(e.target.closest('button')||e.target.closest('#vSeek')) return;
+  videoEl.setPointerCapture(e.pointerId);
+  physics.dragging=true; physics.intent=null; physics.moved=0; physics.pullPx=0;
+  physics.startX=e.clientX; physics.startY=e.clientY; physics.startMorph=physics.morph; physics.startMiniX=physics.miniX; physics.startMiniY=physics.miniY;
+  physics.samples=[{x:e.clientX,y:e.clientY,t:performance.now()}]; loop();
+});
+videoEl.addEventListener('pointermove',e=>{
+  if(!physics.dragging) return;
+  recordSample(e.clientX,e.clientY,performance.now());
+  const l=toLocal(e.clientX-physics.startX,e.clientY-physics.startY); physics.rawLocal=l;
+  physics.moved=Math.hypot(l.x,l.y);
+  const d=dims();
+  if(physics.mode==='fullscreen'){ if(l.y>3){ physics.intent='fs_down'; physics.pullPx=l.y; } else physics.pullPx=0; return; }
+  if(physics.mode==='minimized'){ physics.intent='float'; physics.miniX=physics.startMiniX+l.x; physics.miniY=physics.startMiniY+l.y; return; }
+  if(!physics.intent && Math.abs(l.y)>4) physics.intent = l.y<0 ? 'fs_up' : 'morph_down';
+  if(physics.intent==='fs_up') physics.pullPx=Math.max(0,-l.y);
+  else if(physics.intent==='morph_down'){
+    const travel=Math.max(240,d.h-d.fullH-90); let raw=physics.startMorph+l.y/travel;
+    if(raw<0) raw*=.18; if(raw>1) raw=1+(raw-1)*.22; physics.morph=raw;
+  }
+});
+function endDrag(e){
+  if(!physics.dragging) return; physics.dragging=false;
+  const v=velocity(), d=dims();
+  if(physics.moved<8){
+    if(physics.mode==='minimized') goExpanded(-1.4); else if(e&&e.type==='pointerup') handleSurfaceTap(e);
+    loop(); return;
+  }
+  if(physics.intent==='fs_up'){ if(physics.pullPx>=FS_TRIGGER) goFullscreen(); else { physics.intent=null; loop(); } return; }
+  if(physics.intent==='fs_down'){ if(physics.pullPx>=FS_TRIGGER) exitFullscreen(); else { physics.intent=null; loop(); } return; }
+  if(physics.intent==='morph_down'){
+    const travel=Math.max(240,d.h-d.fullH-90), nv=v.y/travel;
+    if(v.y>420||(physics.morph>.34&&v.y>-250)) goMinimized(Math.max(.8,nv)); else goExpanded(Math.min(-.8,nv));
+    return;
+  }
+  if(physics.intent==='float'){
+    if(physics.miniX<-d.miniW*.42||v.x<-1100||physics.miniX>d.w-d.miniW*.58||v.x>1100){ closePlayer(); showToast('Mini-player dismissed'); return; }
+    const s=nearestCorner(physics.miniX+v.x*.18,physics.miniY+v.y*.18,d);
+    physics.corner=s.key; physics.miniTargetX=s.x; physics.miniTargetY=s.y; physics.miniVx=v.x*.65; physics.miniVy=v.y*.65; loop();
+  }
+}
+videoEl.addEventListener('pointerup',endDrag); videoEl.addEventListener('pointercancel',endDrag);
+
+// ---- Seek bar scrubbing ----
+(function(){
+  const bar=$('vSeek'); let scrubbing=false;
+  const setFrom=e=>{ const r=$('vSeekTrack').getBoundingClientRect(); const f=isRotated()?(e.clientY-r.top)/r.height:(e.clientX-r.left)/r.width; state.progressPct=Math.max(0,Math.min(100,f*100)); updatePlaybackUI(); };
+  bar.addEventListener('pointerdown',e=>{ scrubbing=true; bar.setPointerCapture(e.pointerId); setFrom(e); clearTimeout(ctlTimer); e.stopPropagation(); });
+  bar.addEventListener('pointermove',e=>{ if(scrubbing) setFrom(e); });
+  const up=()=>{ scrubbing=false; pokeControls(); };
+  bar.addEventListener('pointerup',up); bar.addEventListener('pointercancel',up);
+})();
+
+// ===================== SETTINGS =====================
+function settingsRowsHTML(){
+  const rows=[
+    {a:'quality',i:'sliders-horizontal',l:'Quality',v:QUALITIES[state.qualityIdx]},
+    {a:'speed',i:'gauge',l:'Playback speed',v:SPEEDS[state.speedIdx]+'x'},
+    {a:'captions',i:'subtitles',l:'Captions',v:CAPTIONS[state.captionIdx]},
+    {a:'sponsor',i:'fast-forward',l:'SponsorBlock',v:state.sponsorBlock?'On':'Off',on:state.sponsorBlock},
+    {a:'loop',i:'repeat',l:'Loop video',v:state.loopVideo?'On':'Off',on:state.loopVideo}];
+  return rows.map(r=>`<button data-pset="${r.a}" class="w-full px-3 py-3 rounded-xl active:bg-white/10 flex items-center justify-between text-[13px]"><span class="flex items-center gap-3 font-medium"><i data-lucide="${r.i}" class="w-[18px] h-[18px] text-bt-muted"></i>${r.l}</span><span class="font-semibold ${r.on?'text-bt-amber':'text-bt-muted'}">${r.v}</span></button>`).join('');
+}
+function renderSettings(){
+  const h=settingsRowsHTML(); $('portraitSettingsRows').innerHTML=h; $('fsSettingsRows').innerHTML=h; lucide.createIcons();
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-pset]'); if(!b) return; const a=b.dataset.pset;
+  if(a==='quality') state.qualityIdx=(state.qualityIdx+1)%QUALITIES.length;
+  if(a==='speed') state.speedIdx=(state.speedIdx+1)%SPEEDS.length;
+  if(a==='captions') state.captionIdx=(state.captionIdx+1)%CAPTIONS.length;
+  if(a==='sponsor') state.sponsorBlock=!state.sponsorBlock;
+  if(a==='loop') state.loopVideo=!state.loopVideo;
+  updatePlaybackUI(); renderSettings();
+});
+function openSettings(){ renderSettings(); state.settingsOpen=true; videoEl.classList.remove('hide-ctl'); clearTimeout(ctlTimer);
+  $(physics.mode==='fullscreen'?'fsSettingsBackdrop':'portraitSettingsBackdrop').classList.add('open'); }
+function closeSettings(){ const was=state.settingsOpen; state.settingsOpen=false; $('portraitSettingsBackdrop').classList.remove('open'); $('fsSettingsBackdrop').classList.remove('open'); if(was) pokeControls(); }
+
+// ===================== PLAYER LIFECYCLE =====================
+let playbackTimer=null;
+function openVideo(v){
+  v._relInit=false; state.current=v; state.isPlaying=true; state.progressPct=0;
+  if(physics.mode==='fullscreen') exitFullscreen();
+  const d=dims(), cs=corners(d); const c=cs[physics.corner]||cs.BR;
+  physics.miniX=c.x; physics.miniY=c.y; physics.miniTargetX=c.x; physics.miniTargetY=c.y;
+  videoEl.classList.remove('hidden'); watchBackdrop.classList.remove('hidden'); watchDetails.classList.remove('hidden');
+  $('vThumb').src=v.thumb; $('fsTitleText').textContent=v.title; $('fsChannelText').textContent=v.channel;
+  renderWatch(); watchDetails.scrollTop=0;
+  physics.morph=.85; uiCache={}; goExpanded(-2.4);
+  clearInterval(playbackTimer);
+  playbackTimer=setInterval(()=>{
+    if(!state.isPlaying||!state.current) return;
+    state.progressPct=Math.min(100,state.progressPct+(100/state.current.durationSec)*SPEEDS[state.speedIdx]*.5);
+    if(state.sponsorBlock&&state.progressPct>=38&&state.progressPct<48){ state.progressPct=48.5; showToast('SponsorBlock skipped a sponsor segment'); }
+    if(state.progressPct>=100){ if(state.loopVideo) state.progressPct=0; else { state.isPlaying=false; pokeControls(); } }
+    updatePlaybackUI();
+  },500);
+  updatePlaybackUI();
+}
+function closePlayer(){
+  if(physics.mode==='fullscreen') exitFullscreen();
+  closeSettings(); closeSheet(); physics.mode='closed'; state.isPlaying=false; state.current=null; clearInterval(playbackTimer);
+  videoEl.classList.add('hidden'); watchBackdrop.classList.add('hidden'); watchDetails.classList.add('hidden');
+}
+function updatePlaybackUI(){
+  const v=state.current; if(!v) return; const cur=state.progressPct/100*v.durationSec;
+  $('vProgressFill').style.width=state.progressPct+'%'; $('vSeekThumb').style.left=state.progressPct+'%';
+  $('vBuffer').style.width=Math.min(100,state.progressPct+22)+'%';
+  $('vSponsorBar').classList.toggle('hidden',!state.sponsorBlock);
+  $('vTimeLabel').textContent=`${formatTime(cur)} / ${v.duration}`;
+  $('vQualityPill').textContent=`${QUALITIES[state.qualityIdx]} • ${SPEEDS[state.speedIdx]}x`;
+  $('vCaptionsLabel').textContent=state.captionIdx===0?'CC':'CC·'+(state.captionIdx===1?'EN':'BN');
+  document.querySelectorAll('.ic-pause').forEach(el=>el.classList.toggle('hidden',!state.isPlaying));
+  document.querySelectorAll('.ic-play').forEach(el=>el.classList.toggle('hidden',state.isPlaying));
+}
+
+// ===================== WATCH DETAILS =====================
+let related=[];
+function relCardHTML(r){ return `<div data-open-id="${r.id}" class="flex gap-2.5 cursor-pointer row-in">
+  <div class="relative w-36 aspect-video rounded-xl overflow-hidden bg-black shrink-0"><img src="${r.thumb}" class="w-full h-full object-cover" /><span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono">${r.duration}</span></div>
+  <div class="min-w-0 flex-1 py-0.5"><p class="text-xs font-semibold line-clamp-2 leading-snug">${r.title}</p><p class="text-[11px] text-bt-muted mt-1 truncate">${r.channel}</p><p class="text-[10px] text-bt-muted">${r.views} • ${r.age}</p></div></div>`; }
+const relSkel = `<div class="rel-skel flex gap-2.5"><div class="w-36 aspect-video rounded-xl sk shrink-0"></div><div class="flex-1 space-y-2 pt-1"><div class="h-3 rounded sk"></div><div class="h-3 w-2/3 rounded sk"></div></div></div>`;
+function addRelated(n){ const box=$('wRelatedList'); const vs=Array.from({length:n},()=>makeVideo(pick(Object.keys(TITLES)))); related.push(...vs);
+  box.insertAdjacentHTML('beforeend',vs.map(relCardHTML).join('')); lucide.createIcons(); }
+let relLoading=false;
+function loadMoreRelated(){ if(relLoading||!state.current) return; relLoading=true; const box=$('wRelatedList');
+  box.insertAdjacentHTML('beforeend',relSkel.repeat(3));
+  setTimeout(()=>{ box.querySelectorAll('.rel-skel').forEach(e=>e.remove()); addRelated(8); relLoading=false; },500); }
+function renderWatch(){
+  const v=state.current; if(!v) return;
+  $('wTitle').textContent=v.title; $('wMetaText').textContent=`${v.views} • ${v.age}`;
+  $('wChannel').textContent=v.channel; $('wSubs').textContent=v.subs;
+  const av=$('wAvatar'); av.className=`w-9 h-9 rounded-full ${v.avatarColor} flex items-center justify-center text-xs font-bold text-white shrink-0`; av.textContent=v.avatar;
+  const isSub=state.subs.has(v.channel), sb=$('wSubBtn'); sb.textContent=isSub?'Subscribed':'Subscribe';
+  sb.className=`px-4 py-1.5 rounded-full text-xs font-bold transition shrink-0 ${isSub?'bg-bt-pill text-bt-text':'bg-bt-amber text-bt-onAmber'}`;
+  const liked=state.liked.has(v.id), dis=state.disliked.has(v.id);
+  $('wLikeCount').textContent=formatCount(v.likes+(liked?1:0)); $('wDislikeCount').textContent=formatCount(v.dislikes+(dis?1:0));
+  $('wLikeBtn').className=`px-3.5 py-2 flex items-center gap-1.5 text-xs font-semibold active:bg-white/10 ${liked?'text-bt-amber':'text-bt-text'}`;
+  $('wDislikeBtn').className=`px-3 py-2 flex items-center gap-1.5 text-xs font-medium active:bg-white/10 ${dis?'text-bt-amber':'text-bt-muted'}`;
+  $('wDownloadText').textContent=state.downloads.has(v.id)?'Saved':'Download';
+  ensureComments(v); const top=v.comments[0];
+  $('wCommentCount').textContent=formatCount(v.commentCount);
+  $('wTopComment').textContent=top.text; const ta=$('wTopAvatar'); ta.className=`w-6 h-6 rounded-full ${top.color} flex items-center justify-center text-[10px] font-bold text-white shrink-0`; ta.textContent=top.name.slice(0,2).toUpperCase();
+  if(!v._relInit){ v._relInit=true; related=[]; $('wRelatedList').innerHTML=''; addRelated(8); }
+  else { /* same video re-rendered (like/sub) — keep list */ }
+  lucide.createIcons();
+}
+
+// ===================== COMMENTS =====================
+const NAMES=['arif_dev','nusrat.j','tanvir_codes','rafi.hossain','mim_creates','sakib_01','lamia.reads','kawsar_t','dipto.vlogs','samiha_a','nayeem.k','ovi_pixels'];
+const COLORS=['bg-amber-600','bg-orange-600','bg-emerald-600','bg-sky-600','bg-indigo-600','bg-rose-600','bg-teal-600','bg-fuchsia-600'];
+const CM_TEXT=[
+  'This is exactly the kind of explanation I was looking for. Subscribed!','The spring animation at 2:10 is so smooth, how did you tune the damping?','আমার ফোনে এটা একদম পারফেক্ট চলছে, ধন্যবাদ ভাই!','Zero ads, zero tracking, and it still feels better than the official app.',
+  'Watched this twice already. The editing and pacing are great.','Can you make a follow-up covering the offline download part?','Came here from the open-source list, not disappointed at all.','Sound design on this one is underrated. Headphones on, highly recommend.',
+  'Anyone else rewatching the part about gestures? So clean.','Finally someone who explains the why, not just the how. Respect.','Great video! One small correction: the timestamp at 7:45 is slightly off, but the content is gold.','ভিডিওটা অনেক সুন্দর হয়েছে, আরও এমন চাই।'];
+const AGES=['2 minutes ago','1 hour ago','5 hours ago','yesterday','2 days ago','1 week ago','3 weeks ago','2 months ago'];
+let cmId=0;
+function makeComment(replies){
+  const n=++cmId, name=pick(NAMES), c={ id:'c'+n, name, color:pick(COLORS), age:pick(AGES), text:pick(CM_TEXT)+(Math.random()<.25?' '+pick(CM_TEXT):''),
+    likes:Math.floor(Math.random()*Math.random()*4000), liked:false, disliked:false, hearted:Math.random()<.2, pinned:false, replies:[], t:Math.random() };
+  if(replies!==false){ const rn=Math.random()<.45?Math.floor(1+Math.random()*4):0; for(let i=0;i<rn;i++) c.replies.push(makeComment(false)); }
+  return c;
+}
+function ensureComments(v){ if(v.comments) return; v.comments=Array.from({length:10},()=>makeComment()); v.comments[0].pinned=true; v.comments[0].hearted=true; v.comments[0].likes=Math.max(v.comments[0].likes,1200); }
+let sortMode='top';
+function cmHTML(c,isReply){
+  const long=c.text.length>110;
+  return `<div class="cm flex gap-3 ${isReply?'py-2':'py-3'} row-in" data-cid="${c.id}">
+    <div class="relative shrink-0"><div class="${isReply?'w-6 h-6 text-[9px]':'w-9 h-9 text-xs'} rounded-full ${c.color} flex items-center justify-center font-bold text-white">${c.name.slice(0,2).toUpperCase()}</div></div>
+    <div class="min-w-0 flex-1">
+      ${c.pinned?`<p class="text-[11px] font-semibold text-bt-muted flex items-center gap-1 mb-0.5"><i data-lucide="pin" class="w-3 h-3"></i>Pinned by creator</p>`:''}
+      <p class="text-[12px] text-bt-muted"><span class="font-semibold text-bt-text">@${c.name}</span> • ${c.age}</p>
+      <p class="cm-text text-[13px] leading-snug mt-0.5 ${long?'line-clamp-3':''}">${c.text}</p>
+      ${long?`<button class="cm-more text-[12px] font-semibold text-bt-muted mt-0.5">Read more</button>`:''}
+      <div class="flex items-center gap-1 mt-1.5 -ml-2">
+        <button class="cm-like flex items-center gap-1.5 px-2 py-1.5 rounded-full active:bg-white/10 ${c.liked?'text-bt-amber':'text-bt-text/80'}"><i data-lucide="thumbs-up" class="w-4 h-4 ${c.liked?'fill-current':''}"></i><span class="cm-likes text-[12px]">${c.likes?formatCount(c.likes+(c.liked?1:0)):''}</span></button>
+        <button class="cm-dislike px-2 py-1.5 rounded-full active:bg-white/10 ${c.disliked?'text-bt-amber':'text-bt-text/80'}"><i data-lucide="thumbs-down" class="w-4 h-4 ${c.disliked?'fill-current':''}"></i></button>
+        <button class="cm-reply px-3 py-1.5 rounded-full active:bg-white/10 text-[12px] font-semibold text-bt-text/80">Reply</button>
+        ${c.hearted?`<span class="ml-1 flex items-center gap-1 text-[11px] text-bt-muted"><span class="w-4 h-4 rounded-full bg-bt-amber text-bt-onAmber flex items-center justify-center text-[8px] font-bold">DF</span><i data-lucide="heart" class="w-3 h-3 fill-current text-rose-500"></i></span>`:''}
+      </div>
+      ${!isReply&&c.replies.length?`<button class="cm-replies-btn flex items-center gap-1.5 text-[13px] font-semibold text-bt-amber py-1 -ml-0.5"><i data-lucide="chevron-down" class="w-4 h-4 chev"></i><span>${c.replies.length} ${c.replies.length>1?'replies':'reply'}</span></button>
+        <div class="replies"><div>${c.replies.map(r=>cmHTML(r,true)).join('')}</div></div>`:''}
+    </div></div>`;
+}
+const cmSkel=`<div class="cm-skel flex gap-3 py-3"><div class="w-9 h-9 rounded-full sk shrink-0"></div><div class="flex-1 space-y-2 pt-1"><div class="h-3 w-1/3 rounded sk"></div><div class="h-3 rounded sk"></div><div class="h-3 w-3/4 rounded sk"></div></div></div>`;
+function findComment(list,id){ for(const c of list){ if(c.id===id) return c; const r=c.replies.find(x=>x.id===id); if(r) return r; } return null; }
+function sortedComments(v){ const arr=[...v.comments]; if(sortMode==='new') arr.sort((a,b)=>(a.pinned?0:1)-(b.pinned?0:1)||a.t-b.t); else arr.sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||b.likes-a.likes); return arr; }
+function renderCommentsSheet(){
+  const v=state.current; ensureComments(v);
+  $('sheetBody').innerHTML=`
+    <div class="px-4 pt-3 pb-1">
+      <div id="composer" class="flex gap-3 items-start">
+        <div class="w-9 h-9 rounded-full bg-bt-amber text-bt-onAmber flex items-center justify-center text-xs font-bold shrink-0">BT</div>
+        <div class="flex-1">
+          <input id="cmInput" type="text" placeholder="Add a comment…" class="w-full bg-transparent border-b border-white/15 focus:border-bt-amber outline-none text-[13px] py-1.5 transition" />
+          <div id="cmActions" class="hidden justify-end gap-2 pt-2"><button id="cmCancel" class="px-3 py-1.5 rounded-full text-xs font-semibold text-bt-text/80">Cancel</button><button id="cmPost" class="px-4 py-1.5 rounded-full text-xs font-bold bg-white/10 text-bt-muted" disabled>Comment</button></div>
+        </div>
+      </div>
+      <div id="cmList" class="divide-y divide-transparent">${sortedComments(v).map(c=>cmHTML(c)).join('')}</div>
+      <div id="cmSentinel" class="h-8"></div>
+    </div>`;
+  document.querySelectorAll('.sort-btn').forEach(b=>{ const on=b.dataset.sort===sortMode; b.className=`sort-btn px-3 py-1.5 rounded-lg text-xs font-semibold ${on?'bg-bt-text text-bt-bg':'bg-bt-pill text-bt-text'}`; });
+  lucide.createIcons(); setupCmObserver();
+  const inp=$('cmInput');
+  inp.addEventListener('focus',()=>{ $('cmActions').classList.remove('hidden'); $('cmActions').classList.add('flex'); });
+  inp.addEventListener('input',()=>{ const ok=inp.value.trim().length>0; const p=$('cmPost'); p.disabled=!ok; p.className=`px-4 py-1.5 rounded-full text-xs font-bold ${ok?'bg-bt-amber text-bt-onAmber':'bg-white/10 text-bt-muted'}`; });
+  $('cmCancel').addEventListener('click',()=>{ inp.value=''; inp.blur(); $('cmActions').classList.add('hidden'); $('cmActions').classList.remove('flex'); });
+  $('cmPost').addEventListener('click',()=>{ const t=inp.value.trim(); if(!t) return; const c=makeComment(false); Object.assign(c,{name:'bilai_user',color:'bg-bt-amber',age:'Just now',text:t,likes:0,hearted:false}); v.comments.unshift(c); v.commentCount++;
+    $('cmList').insertAdjacentHTML('afterbegin',cmHTML(c).replace('row-in','cm-in')); lucide.createIcons(); inp.value=''; inp.blur(); $('cmActions').classList.add('hidden'); $('cmActions').classList.remove('flex'); $('wCommentCount').textContent=formatCount(v.commentCount); $('sheetHeading').textContent=`Comments · ${formatCount(v.commentCount)}`; $('sheetBody').scrollTo({top:0,behavior:'smooth'}); });
+}
+let cmObs=null, cmLoading=false;
+function setupCmObserver(){ if(cmObs) cmObs.disconnect(); cmObs=new IntersectionObserver(es=>{ if(es.some(e=>e.isIntersecting)) loadMoreComments(); },{root:$('sheetBody'),rootMargin:'300px'}); cmObs.observe($('cmSentinel')); }
+function loadMoreComments(){ if(cmLoading||state.sheetMode!=='comments') return; cmLoading=true; const list=$('cmList'); list.insertAdjacentHTML('beforeend',cmSkel.repeat(2));
+  setTimeout(()=>{ list.querySelectorAll('.cm-skel').forEach(e=>e.remove()); const v=state.current; if(!v||state.sheetMode!=='comments'){ cmLoading=false; return; }
+    const more=Array.from({length:8},()=>makeComment()); v.comments.push(...more); list.insertAdjacentHTML('beforeend',more.map(c=>cmHTML(c)).join('')); lucide.createIcons(); cmLoading=false; },550); }
+// comment interactions (delegated)
+$('sheetBody').addEventListener('click',e=>{
+  const row=e.target.closest('.cm'); if(!row) return; const c=findComment(state.current.comments,row.dataset.cid); if(!c) return;
+  if(e.target.closest('.cm-like')){ c.liked=!c.liked; if(c.liked) c.disliked=false; refreshCm(row,c,true); }
+  else if(e.target.closest('.cm-dislike')){ c.disliked=!c.disliked; if(c.disliked) c.liked=false; refreshCm(row,c,false); }
+  else if(e.target.closest('.cm-more')){ const t=row.querySelector('.cm-text'); t.classList.toggle('line-clamp-3'); e.target.closest('.cm-more').textContent=t.classList.contains('line-clamp-3')?'Read more':'Show less'; }
+  else if(e.target.closest('.cm-replies-btn')){ const b=e.target.closest('.cm-replies-btn'); const rep=b.nextElementSibling; const open=rep.classList.toggle('open'); b.classList.toggle('open-chev',open); }
+  else if(e.target.closest('.cm-reply')){ const inp=$('cmInput'); $('sheetBody').scrollTo({top:0,behavior:'smooth'}); inp.focus(); inp.value='@'+c.name+' '; inp.dispatchEvent(new Event('input')); }
+});
+function refreshCm(row,c,popLike){
+  const lb=row.querySelector('.cm-like'), db=row.querySelector('.cm-dislike');
+  lb.className=`cm-like flex items-center gap-1.5 px-2 py-1.5 rounded-full active:bg-white/10 ${c.liked?'text-bt-amber':'text-bt-text/80'}`;
+  db.className=`cm-dislike px-2 py-1.5 rounded-full active:bg-white/10 ${c.disliked?'text-bt-amber':'text-bt-text/80'}`;
+  lb.querySelector('svg').classList.toggle('fill-current',c.liked); db.querySelector('svg').classList.toggle('fill-current',c.disliked);
+  const n=c.likes+(c.liked?1:0); lb.querySelector('.cm-likes').textContent=n?formatCount(n):'';
+  const target=(popLike?lb:db).querySelector('svg'); target.classList.remove('like-pop'); void target.getBoundingClientRect(); if((popLike&&c.liked)||(!popLike&&c.disliked)) target.classList.add('like-pop');
+}
+
+// ===================== SHEET (description / comments) =====================
+function openSheet(mode){
+  const v=state.current; if(!v||physics.mode!=='expanded') return;
+  state.sheetMode=mode; sheetBackdrop.style.top=dims().fullH+'px'; sheetPanel.style.transform='';
+  $('sheetSortRow').classList.toggle('hidden',mode!=='comments'); $('sheetSortRow').classList.toggle('flex',mode==='comments');
+  if(mode==='desc'){
+    $('sheetHeading').textContent='Description';
+    $('sheetBody').innerHTML=`<div class="p-4 space-y-3 text-[13px] leading-relaxed"><h3 class="text-sm font-bold">${v.title}</h3>
+      <div class="grid grid-cols-3 gap-2 text-center py-2 rounded-xl bg-bt-bg"><div><div class="text-sm font-bold text-bt-amber">${formatCount(v.likes)}</div><div class="text-[10px] text-bt-muted">Likes</div></div>
+      <div><div class="text-sm font-bold">${v.views.replace(' views','')}</div><div class="text-[10px] text-bt-muted">Views</div></div>
+      <div><div class="text-sm font-bold">${v.date}</div><div class="text-[10px] text-bt-muted">Published</div></div></div>
+      <p class="whitespace-pre-line text-bt-text/90">${v.description}</p></div>`;
+  } else { $('sheetHeading').textContent=`Comments · ${formatCount(v.commentCount)}`; renderCommentsSheet(); }
+  $('sheetBody').scrollTop=0; sheetBackdrop.classList.add('open');
+}
+function closeSheet(){ state.sheetMode=null; sheetBackdrop.classList.remove('open'); sheetPanel.style.transform=''; if(cmObs) cmObs.disconnect(); const i=$('cmInput'); if(i) i.blur(); }
+// drag the sheet header down to dismiss (velocity aware)
+(function(){
+  const head=$('sheetHead'); let drag=false,sy=0,dy=0,samples=[];
+  head.addEventListener('pointerdown',e=>{ if(e.target.closest('button')) return; drag=true; sy=e.clientY; dy=0; samples=[{y:e.clientY,t:performance.now()}]; head.setPointerCapture(e.pointerId); sheetPanel.classList.add('dragging'); });
+  head.addEventListener('pointermove',e=>{ if(!drag) return; dy=Math.max(0,e.clientY-sy); samples.push({y:e.clientY,t:performance.now()}); const cut=performance.now()-90; while(samples.length>2&&samples[0].t<cut) samples.shift(); sheetPanel.style.transform=`translate3d(0,${dy}px,0)`; });
+  const end=()=>{ if(!drag) return; drag=false; sheetPanel.classList.remove('dragging'); const a=samples[0], b=samples[samples.length-1]; const vy=(b.y-a.y)/Math.max(.004,(b.t-a.t)/1000);
+    if(dy>110||vy>650) closeSheet(); else sheetPanel.style.transform=''; };
+  head.addEventListener('pointerup',end); head.addEventListener('pointercancel',end);
+})();
+document.querySelectorAll('.sort-btn').forEach(b=>b.addEventListener('click',()=>{ sortMode=b.dataset.sort; renderCommentsSheet(); }));
+
+// ===================== HOME FEED (endless) =====================
+let feedItems=[], feedLoading=false;
+function feedCardHTML(v){ return `<article data-open-id="${v.id}" class="cursor-pointer pb-4 row-in">
+  <div class="relative w-full aspect-video bg-black overflow-hidden"><img src="${v.thumb}" class="w-full h-full object-cover" /><span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/85 text-[11px] font-mono font-semibold">${v.duration}</span></div>
+  <div class="px-3 pt-2.5 flex gap-3 items-start"><div class="w-9 h-9 rounded-full ${v.avatarColor} flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5">${v.avatar}</div>
+  <div class="min-w-0 flex-1"><h2 class="text-[14.5px] font-semibold leading-snug line-clamp-2">${v.title}</h2><p class="text-xs text-bt-muted mt-1 truncate">${v.channel} • ${v.views} • ${v.age}</p></div></div></article>`; }
+const feedSkel=`<div class="feed-skel pb-4"><div class="w-full aspect-video sk"></div><div class="px-3 pt-2.5 flex gap-3"><div class="w-9 h-9 rounded-full sk shrink-0"></div><div class="flex-1 space-y-2 pt-1"><div class="h-3.5 rounded sk"></div><div class="h-3 w-2/3 rounded sk"></div></div></div></div>`;
+function feedGen(n){ const subsOnly = state.tab==='subs' ? [...state.subs] : null; if(subsOnly&&!subsOnly.length) return []; return Array.from({length:n},()=>makeVideo(state.cat,subsOnly)); }
+function resetFeed(){
+  const list=$('feedList'); $('homeFeed').scrollTop=0;
+  if(state.tab==='library'){ const items=Object.values(VMAP).filter(v=>state.liked.has(v.id)||state.downloads.has(v.id));
+    list.innerHTML=items.length?items.map(feedCardHTML).join(''):`<div class="py-16 text-center text-xs text-bt-muted">Like or download a video and it shows up here.</div>`; $('feedSentinel').classList.add('hidden'); lucide.createIcons(); return; }
+  $('feedSentinel').classList.remove('hidden');
+  feedItems=feedGen(8); list.innerHTML=feedItems.length?feedItems.map(feedCardHTML).join(''):`<div class="py-16 text-center text-xs text-bt-muted">Subscribe to channels to see their latest videos.</div>`;
+  if(!feedItems.length) $('feedSentinel').classList.add('hidden');
+}
+function loadMoreFeed(){ if(feedLoading||state.tab==='library') return; if(state.tab==='subs'&&!state.subs.size) return; feedLoading=true; const list=$('feedList'); list.insertAdjacentHTML('beforeend',feedSkel.repeat(2));
+  setTimeout(()=>{ list.querySelectorAll('.feed-skel').forEach(e=>e.remove()); const vs=feedGen(8); feedItems.push(...vs); list.insertAdjacentHTML('beforeend',vs.map(feedCardHTML).join('')); feedLoading=false; },550); }
+function renderChips(){
+  $('categoryChips').innerHTML=CATS.map(c=>`<button data-cat="${c}" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold ${c===state.cat?'bg-bt-text text-bt-bg':'bg-bt-pill text-bt-text'}">${c}</button>`).join('');
+  document.querySelectorAll('.btab-btn').forEach(b=>{ const a=b.dataset.btab===state.tab; b.className=`btab-btn flex flex-col items-center justify-center gap-0.5 ${a?'text-bt-amber font-semibold':'text-bt-muted'}`; });
+}
+$('categoryChips').addEventListener('click',e=>{ const b=e.target.closest('[data-cat]'); if(!b) return; state.cat=b.dataset.cat; renderChips(); resetFeed(); });
+document.querySelectorAll('.btab-btn').forEach(b=>b.addEventListener('click',()=>{ state.tab=b.dataset.btab; renderChips(); resetFeed(); }));
+new IntersectionObserver(es=>{ if(es.some(e=>e.isIntersecting)) loadMoreFeed(); },{root:$('homeFeed'),rootMargin:'400px'}).observe($('feedSentinel'));
+new IntersectionObserver(es=>{ if(es.some(e=>e.isIntersecting)) loadMoreRelated(); },{root:watchDetails,rootMargin:'400px'}).observe($('relSentinel'));
+document.addEventListener('click',e=>{ const el=e.target.closest('[data-open-id]'); if(!el) return; const v=VMAP[el.dataset.openId]; if(v) openVideo(v); });
+
+// ===================== BUTTONS =====================
+$('vDownBtn').addEventListener('click',()=>{ if(physics.mode==='fullscreen') exitFullscreen(); else goMinimized(2.5); });
+$('vFullscreenBtn').addEventListener('click',()=>{ if(physics.mode==='fullscreen') exitFullscreen(); else goFullscreen(); });
+$('wMiniQuickBtn').addEventListener('click',()=>goMinimized(2.5));
+$('vMiniCloseBtn').addEventListener('click',closePlayer);
+function togglePlay(){ state.isPlaying=!state.isPlaying; updatePlaybackUI(); pokeControls(); }
+$('vPlayBtn').addEventListener('click',togglePlay); $('vMiniPlayBtn').addEventListener('click',togglePlay);
+$('vRewBtn').addEventListener('click',()=>{ seekBy(-10); flashSeek(-1,10); pokeControls(); });
+$('vFwdBtn').addEventListener('click',()=>{ seekBy(10); flashSeek(1,10); pokeControls(); });
+$('vCaptionsBtn').addEventListener('click',()=>{ state.captionIdx=(state.captionIdx+1)%CAPTIONS.length; updatePlaybackUI(); showToast('Captions: '+CAPTIONS[state.captionIdx]); pokeControls(); });
+$('vSettingsBtn').addEventListener('click',openSettings);
+$('closePortraitSettingsBtn').addEventListener('click',closeSettings); $('closeFsSettingsBtn').addEventListener('click',closeSettings);
+$('portraitSettingsBackdrop').addEventListener('click',e=>{ if(e.target.id==='portraitSettingsBackdrop') closeSettings(); });
+$('fsSettingsBackdrop').addEventListener('click',e=>{ if(e.target.id==='fsSettingsBackdrop') closeSettings(); });
+$('descTrigger').addEventListener('click',()=>openSheet('desc'));
+$('commentsPreviewCard').addEventListener('click',()=>openSheet('comments'));
+$('closeSheetBtn').addEventListener('click',closeSheet);
+sheetBackdrop.addEventListener('click',e=>{ if(e.target.id==='sheetBackdrop') closeSheet(); });
+$('wSubBtn').addEventListener('click',()=>{ const ch=state.current.channel; state.subs.has(ch)?state.subs.delete(ch):state.subs.add(ch); renderWatch(); });
+$('wLikeBtn').addEventListener('click',()=>{ const id=state.current.id; if(state.liked.has(id)) state.liked.delete(id); else { state.liked.add(id); state.disliked.delete(id); } renderWatch();
+  const ic=$('wLikeBtn').querySelector('svg'); ic.classList.remove('like-pop'); void ic.getBoundingClientRect(); if(state.liked.has(id)) ic.classList.add('like-pop'); });
+$('wDislikeBtn').addEventListener('click',()=>{ const id=state.current.id; if(state.disliked.has(id)) state.disliked.delete(id); else { state.disliked.add(id); state.liked.delete(id); } renderWatch(); });
+$('wDownloadBtn').addEventListener('click',()=>{ const id=state.current.id; state.downloads.has(id)?state.downloads.delete(id):state.downloads.add(id); renderWatch(); showToast(state.downloads.has(id)?'Saved offline':'Removed download'); });
+$('wShareBtn').addEventListener('click',()=>showToast('Link copied'));
+$('urlModalOpenBtn').addEventListener('click',()=>$('urlModal').classList.remove('hidden'));
+['closeUrlModalBtn','cancelUrlBtn'].forEach(id=>$(id).addEventListener('click',()=>$('urlModal').classList.add('hidden')));
+$('loadUrlBtn').addEventListener('click',()=>{ const m=$('ytUrlInput').value.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/); if(!m){ showToast('Enter a valid YouTube link'); return; }
+  $('urlModal').classList.add('hidden'); const v=makeVideo('Tech'); v.title='YouTube video '+m[1]; openVideo(v); });
+function showToast(msg){ const t=$('toast'); t.textContent=msg; t.classList.remove('hidden'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add('hidden'),2000); }
+
+// ===================== INIT =====================
+renderChips(); resetFeed(); lucide.createIcons();
+const first=makeVideo('Coding'); first.title='Building a 60FPS Spring-Physics Mini-Player on Android'; first.channel='DevForge Labs'; first.avatar='DF'; first.avatarColor='bg-amber-600'; first.subs='284K subscribers';
+openVideo(first);
+</script>
+</body>
+</html>
