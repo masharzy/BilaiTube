@@ -37,6 +37,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.local.history.HistoryRecordManager
 import org.schabi.newpipe.local.playlist.LocalPlaylistManager
 import org.schabi.newpipe.util.ExtractorHelper
+import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor as YtFeed
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -476,9 +477,8 @@ internal fun AccountPlaylistPage(playlistId: String, title: String, close: () ->
             runCatching {
                 val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
                 val country = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry()
-                val feed = org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
-                if (token == null && playlistId.startsWith("FE")) feed.fetchFeed(playlistId, loc, country)
-                else if (token == null) feed.fetchPlaylist(playlistId, loc, country)
+                if (token == null && playlistId.startsWith("FE")) YtFeed.fetchFeed(playlistId, loc, country)
+                else if (token == null) YtFeed.fetchPlaylist(playlistId, loc, country)
                 else org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
                     .fetchContinuation(token, loc, country)
             }.onFailure { reason = it.message ?: it.javaClass.simpleName

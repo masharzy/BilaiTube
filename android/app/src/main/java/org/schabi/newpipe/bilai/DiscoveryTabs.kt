@@ -61,6 +61,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.local.history.HistoryRecordManager
 import org.schabi.newpipe.local.subscription.SubscriptionManager
 import org.schabi.newpipe.util.ExtractorHelper
+import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor as YtFeed
 
 private fun shortsSearchFilter(): List<org.schabi.newpipe.extractor.search.filter.FilterItem> {
     val factory = ServiceList.YouTube.searchQHFactory
@@ -363,14 +364,13 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
     var accountFeed by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     var accountNext by remember { mutableStateOf<String?>(null) }
     var accountLoading by remember { mutableStateOf(false) }
-    val feedApi = org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
     val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
     val country = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry()
     LaunchedEffect(signedIn, refresh) {
         if (!signedIn || fixture) return@LaunchedEffect
         accountLoading = true
         val list = withContext(Dispatchers.IO) {
-            runCatching { feedApi.fetchSubscribedChannels(loc, country) }.getOrDefault(emptyList())
+            runCatching { YtFeed.fetchSubscribedChannels(loc, country) }.getOrDefault(emptyList())
         }
         channels = list.mapIndexed { index, item ->
             SubscriptionEntity().apply {
@@ -378,7 +378,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
                 avatarUrl = item.avatar; serviceId = ServiceList.YouTube.serviceId
             }
         }
-        val page = withContext(Dispatchers.IO) { runCatching { feedApi.fetchFeed("FEsubscriptions", loc, country) }.getOrNull() }
+        val page = withContext(Dispatchers.IO) { runCatching { YtFeed.fetchFeed("FEsubscriptions", loc, country) }.getOrNull() }
         accountFeed = page?.items.orEmpty()
         accountNext = page?.continuation
         accountLoading = false
@@ -387,7 +387,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
         val token = accountNext ?: return
         if (accountLoading) return
         accountLoading = true
-        val page = withContext(Dispatchers.IO) { runCatching { feedApi.fetchContinuation(token, loc, country) }.getOrNull() }
+        val page = withContext(Dispatchers.IO) { runCatching { YtFeed.fetchContinuation(token, loc, country) }.getOrNull() }
         accountFeed = (accountFeed + page?.items.orEmpty()).distinctBy { it.url }
         accountNext = page?.continuation?.takeIf { it != token }
         accountLoading = false

@@ -555,11 +555,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     select(Tab.SHORTS)
                                 }, ::openVideoMenu)
                                 Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, debugShorts,
-                                    reactionOf = { id -> reactions[id]?.name ?: "NONE" },
-                                    download = { overlay = "Download picker" },
                                     { react(Reaction.LIKE) }, { react(Reaction.DISLIKE) },
                                     { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share,
-                                    search = { overlay = "Search" })
+                                    search = { overlay = "Search" },
+                                    reactionOf = { id -> reactions[id]?.name ?: "NONE" },
+                                    download = { overlay = "Download picker" })
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu, fixture = BuildConfig.DEBUG && fixtureSubs,
                                     signedIn = signedIn, signIn = { overlay = "Sign in" },
                                     explore = { overlay = "Search" }, channelPage = ::openChannel,
