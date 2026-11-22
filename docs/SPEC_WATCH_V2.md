@@ -75,3 +75,36 @@ Brightness (left edge) and volume (right edge) vertical drags from SPEC §5.9 re
 3. Endless Up Next (§4) and endless Home (§7).
 4. Update debug hooks so CI can capture: `bt.action=open_comments|open_desc|open_settings|fullscreen|exit_fullscreen|minimize|expand` and add screenshots for: `watch_expanded`, `watch_controls_hidden`, `comments_open`, `comments_replies_open`, `desc_open`, `settings_portrait`, `fullscreen_landscape`, `fullscreen_settings_drawer`, `mini_br`, `mini_tl`, plus a drag sequence.
 5. Report with files changed, what to test by hand, known gaps. Do not start M4 until the reviewer accepts M2.
+
+---
+
+# Addendum (owner feedback after preview review) — these override anything above
+
+`docs/reference/watch-preview.html` is updated; the HTML wins. Preview: docs/reference/watch-preview.html
+
+## A1. Double-tap seek animation (YouTube style, not a pill)
+- Double-tap left/right half → a translucent **white/30 half-oval** fills that half of the video (curved inner edge: radii 50%/50% of the zone, zone width 42% of video width, full height), fades in 160 ms, clipped by the video's own corner radius.
+- Inside it, vertically centered: **three chevron triangles** (22 dp, white) pulsing in sequence (opacity .2 → 1 → .2, 900 ms loop, 150 ms stagger; chevrons point toward the tapped side) and below them the text `10 seconds` (13 sp SemiBold white). Consecutive taps (any gap < 700 ms while the zone is still showing) accumulate: `20 seconds`, `30 seconds`… Changing side resets the count.
+- A **tap ripple**: a 60 dp white/28 circle at the finger point scales .3 → 5 while fading out over 550 ms.
+- The center play/rewind/forward buttons fade out while the zone is showing. The zone fades out 750 ms after the last tap. Hidden in the mini player.
+- The center rewind/forward buttons use the same zone animation with 10 s.
+
+## A2. Comment reply opens inline
+Tapping **Reply** on a comment (or a reply) expands a composer **directly under that comment** (height animation 300 ms): 24 dp avatar, underlined field with placeholder `Reply to @handle…`, Cancel / Reply buttons (Reply enabled in accent only with text). Only one reply box is open at a time. The list must **not** scroll to the top; only scroll the box into view if it is clipped.
+Posting inserts the reply at the end of that comment's replies, auto-expands the replies with a 320 ms slide-in, scrolls it into view, and bumps both counts. Replying to a reply prefixes `@handle `. (Not posted to YouTube unless signed in and supported; mark local-only replies with a subtle "Local" tag.)
+
+## A3. Captions
+- The **CC button is an on/off toggle only** (accent-filled when on, dark circle when off). It never cycles languages. Toast: `Captions on · <language>` / `Captions off`.
+- Language is chosen in **Settings → Captions** (a sub-page): `Off`, then the available tracks (manual first, then auto-generated, then auto-translate); selected row has a check and accent text. Choosing returns to the main settings page.
+- While on, draw the current cue at the bottom of the video (13 sp portrait, 18 sp fullscreen, white on black/75, rounded); it moves down when controls auto-hide. Use the engine's subtitle tracks (`StreamInfo.subtitles`).
+
+## A4. Playback speed — free choice up to 4×
+Settings → **Playback speed** sub-page: large value (`3.05x`), slider **0.25×–4×, step 0.05**, − / + buttons (±0.05), preset chips `0.25x 0.5x 0.75x Normal 1.25x 1.5x 2x 3x 4x` (active chip = accent). Applies instantly (pitch-corrected via the engine). The speed chip/pill on the video shows the current value. No click-to-cycle anywhere.
+
+## A5. Autoplay (animated)
+- A **switch in the player's top bar** (left of CC): 36×20 dp track, 16 dp white thumb carrying a tiny play icon (on) / pause icon (off); thumb slides with a springy overshoot curve `cubic-bezier(.34,1.56,.64,1)` 260 ms; track turns accent when on. Also a row in Settings (same switch). Persisted.
+- When a video ends and autoplay is on: dark end card over the video with `Up next`, thumbnail + title of the first related video, an accent **countdown ring (5 s, linear)**, `Cancel` and `Play now`. At 0 it opens the next video (stays in fullscreen if it was fullscreen; otherwise runs the normal open spring). Cancel → shows a big replay button. Autoplay off → shows the replay button immediately. Not shown in the mini player (there it just autoplays/stops).
+- The next video is the first item of Up Next (extractor related items).
+
+## A6. Settings is a paged menu (YouTube style)
+Main page rows: Autoplay (switch), Captions (value ›), Quality (value ›), Playback speed (value ›), SponsorBlock (switch), Loop video (switch). Sub-pages (Captions, Quality, Speed) slide in (240 ms, from the right) with a back arrow in the header. Quality list: Auto, 2160p, 1440p, 1080p60, 720p, 480p, 360p, 240p, 144p (only what the stream offers), check on the active one. Same content in the portrait bottom sheet and the landscape right drawer.

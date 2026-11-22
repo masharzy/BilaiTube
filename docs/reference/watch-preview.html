@@ -68,6 +68,34 @@ input, textarea { user-select:text; -webkit-user-select:text; }
 .sheet-panel-right { transform:translate3d(105%,0,0); transition:transform .34s cubic-bezier(.22,1,.36,1); }
 .sheet-backdrop.open .sheet-panel-right { transform:translate3d(0,0,0); }
 
+.seek-zone { position:absolute; top:0; bottom:0; width:42%; background:rgba(255,255,255,.3); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; opacity:0; pointer-events:none; transition:opacity .16s ease; z-index:5; color:#fff; }
+.seek-zone.left { left:0; border-radius:0 50% 50% 0 / 0 50% 50% 0; }
+.seek-zone.right { right:0; border-radius:50% 0 0 50% / 50% 0 0 50%; }
+.seek-zone.on { opacity:1; }
+.seek-arrows { display:flex; align-items:center; }
+.seek-arrows.flip { transform:scaleX(-1); }
+.seek-arrows svg { width:22px; height:22px; fill:#fff; opacity:.2; }
+.seek-zone.on .seek-arrows svg { animation:arrowPulse .9s ease-in-out infinite; }
+.seek-zone.on .seek-arrows svg:nth-child(2) { animation-delay:.15s; }
+.seek-zone.on .seek-arrows svg:nth-child(3) { animation-delay:.3s; }
+@keyframes arrowPulse { 0%,100%{opacity:.2} 40%{opacity:1} }
+.seek-sec { font-size:13px; font-weight:600; }
+#videoSurface[data-seeking="1"] #vCenterControls { opacity:0; }
+.tap-ripple { position:absolute; width:60px; height:60px; margin:-30px 0 0 -30px; border-radius:50%; background:rgba(255,255,255,.28); pointer-events:none; z-index:4; animation:rippleOut .55s ease-out forwards; }
+@keyframes rippleOut { from{transform:scale(.3);opacity:.9} to{transform:scale(5);opacity:0} }
+#videoSurface.mini .seek-zone, #videoSurface.mini #captionBox, #videoSurface.mini #endCard { display:none !important; }
+#captionBox { bottom:44px; transition:bottom .22s ease; }
+#videoSurface.hide-ctl #captionBox { bottom:14px; }
+#phoneStage.fs #captionText { font-size:18px; padding:2px 10px; }
+#phoneStage.fs #captionBox { bottom:56px; } #phoneStage.fs #videoSurface.hide-ctl #captionBox { bottom:18px; }
+@keyframes pageIn { from{opacity:0;transform:translateX(18px)} to{opacity:1;transform:none} }
+.page-in { animation:pageIn .24s cubic-bezier(.22,1,.36,1); }
+input[type=range].spd { -webkit-appearance:none; appearance:none; height:4px; border-radius:2px; background:rgba(255,255,255,.2); outline:none; width:100%; }
+input[type=range].spd::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:#F59E0B; box-shadow:0 0 0 4px rgba(245,158,11,.2); }
+input[type=range].spd::-moz-range-thumb { width:18px; height:18px; border:0; border-radius:50%; background:#F59E0B; }
+.sw { position:relative; width:36px; height:20px; border-radius:10px; background:rgba(255,255,255,.22); transition:background .2s; flex-shrink:0; }
+.sw i { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .26s cubic-bezier(.34,1.56,.64,1); }
+.sw.on { background:#F59E0B; } .sw.on i { transform:translateX(16px); }
 .replies { display:grid; grid-template-rows:0fr; transition:grid-template-rows .3s cubic-bezier(.22,1,.36,1); }
 .replies.open { grid-template-rows:1fr; }
 .replies > div { overflow:hidden; }
@@ -175,7 +203,14 @@ input, textarea { user-select:text; -webkit-user-select:text; }
         </div>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
-        <button id="vCaptionsBtn" class="h-8 px-2.5 rounded-full bg-black/50 text-[10px] font-bold text-white flex items-center gap-1"><i data-lucide="subtitles" class="w-3.5 h-3.5"></i><span id="vCaptionsLabel">CC</span></button>
+        <button id="vAutoBtn" class="h-8 px-2 rounded-full bg-black/50 flex items-center" aria-label="Autoplay">
+          <span id="autoTrack" class="relative block w-9 h-5 rounded-full bg-white/30 transition-colors duration-200">
+            <span id="autoThumb" class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white text-black flex items-center justify-center" style="transition:transform .26s cubic-bezier(.34,1.56,.64,1)">
+              <i data-lucide="play" class="w-2.5 h-2.5 au-play fill-current"></i><i data-lucide="pause" class="w-2.5 h-2.5 au-pause fill-current hidden"></i>
+            </span>
+          </span>
+        </button>
+        <button id="vCaptionsBtn" class="h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center transition-colors" aria-label="Captions"><i data-lucide="subtitles" class="w-4 h-4"></i></button>
         <button id="vSettingsBtn" class="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white"><i data-lucide="settings" class="w-4 h-4"></i></button>
       </div>
     </div>
@@ -193,8 +228,23 @@ input, textarea { user-select:text; -webkit-user-select:text; }
       <i data-lucide="pause" class="w-3 h-3 ic-pause"></i><i data-lucide="play" class="w-3 h-3 ic-play hidden"></i>
     </button>
 
-    <div id="seekFlashBadge" class="hidden absolute top-1/2 -translate-y-1/2 h-10 px-3 rounded-full bg-black/70 text-white text-xs font-bold items-center gap-1 pointer-events-none">
-      <i data-lucide="fast-forward" class="w-3.5 h-3.5 text-bt-amber"></i><span id="seekFlashText">+10s</span>
+    <div id="seekL" class="seek-zone left"><div class="seek-arrows flip"><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg></div><span class="seek-sec">10 seconds</span></div>
+    <div id="seekR" class="seek-zone right"><div class="seek-arrows"><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg></div><span class="seek-sec">10 seconds</span></div>
+    <div id="captionBox" class="hidden absolute inset-x-3 flex justify-center pointer-events-none z-[6]"><span id="captionText" class="px-2 py-0.5 rounded bg-black/75 text-white text-[13px] leading-snug text-center"></span></div>
+    <div id="endCard" class="hidden absolute inset-0 z-[8] bg-black/85 items-center justify-center p-4">
+      <div id="endNext" class="flex flex-col items-center gap-2 text-center max-w-[80%]">
+        <p class="text-[11px] text-white/70">Up next</p>
+        <div class="flex items-center gap-3">
+          <div class="relative w-24 aspect-video rounded-lg overflow-hidden bg-black shrink-0"><img id="endThumb" class="w-full h-full object-cover" /></div>
+          <p id="endTitle" class="text-xs font-semibold text-white text-left line-clamp-3"></p>
+        </div>
+        <div class="flex items-center gap-3 mt-1">
+          <svg id="endRing" viewBox="0 0 36 36" class="w-9 h-9 -rotate-90"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="3"/><circle id="endRingFg" cx="18" cy="18" r="15" fill="none" stroke="#F59E0B" stroke-width="3" stroke-linecap="round" stroke-dasharray="94.25" stroke-dashoffset="94.25"/></svg>
+          <button id="endCancel" class="px-3 py-1.5 rounded-full bg-white/15 text-xs font-semibold text-white">Cancel</button>
+          <button id="endPlayNow" class="px-3 py-1.5 rounded-full bg-bt-amber text-bt-onAmber text-xs font-bold">Play now</button>
+        </div>
+      </div>
+      <button id="endReplay" class="hidden w-14 h-14 rounded-full bg-white/15 text-white items-center justify-center"><i data-lucide="rotate-ccw" class="w-6 h-6"></i></button>
     </div>
 
     <div id="vBottomBar" class="ctl absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/45 to-transparent pt-6 pb-1.5 px-3 z-10">
@@ -222,21 +272,13 @@ input, textarea { user-select:text; -webkit-user-select:text; }
   <div id="portraitSettingsBackdrop" class="sheet-backdrop absolute inset-0 z-[60] bg-black/60 flex items-end">
     <div class="sheet-panel-bottom w-full rounded-t-3xl bg-bt-surface border-t border-white/10 p-4 pb-6 space-y-3">
       <div class="w-10 h-1 rounded-full bg-white/25 mx-auto"></div>
-      <div class="flex items-center justify-between">
-        <span class="text-sm font-bold">Playback settings</span>
-        <button id="closePortraitSettingsBtn" class="p-1 rounded-full text-bt-muted"><i data-lucide="x" class="w-4 h-4"></i></button>
-      </div>
-      <div id="portraitSettingsRows" class="space-y-1"></div>
+      <div id="portraitSettingsRows"></div>
     </div>
   </div>
   <!-- Settings: landscape right drawer -->
   <div id="fsSettingsBackdrop" class="sheet-backdrop absolute inset-0 z-[60] bg-black/55 flex justify-end">
     <div class="sheet-panel-right w-72 max-w-[75%] h-full bg-bt-surface/95 border-l border-white/10 p-4 scroller no-scrollbar">
-      <div class="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
-        <span class="text-sm font-bold">Playback settings</span>
-        <button id="closeFsSettingsBtn" class="p-1 rounded-full text-bt-muted"><i data-lucide="x" class="w-4 h-4"></i></button>
-      </div>
-      <div id="fsSettingsRows" class="space-y-1"></div>
+      <div id="fsSettingsRows"></div>
     </div>
   </div>
 
@@ -323,8 +365,11 @@ function makeVideo(cat, onlyChannels) {
 function formatTime(sec){ sec=Math.max(0,Math.floor(sec)); const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60; return (h?h+':'+String(m).padStart(2,'0'):String(m).padStart(2,'0'))+':'+String(s).padStart(2,'0'); }
 function formatCount(n){ if(n>=1e9) return (n/1e9).toFixed(1)+'B'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(n>=1e4?0:1)+'K'; return String(n); }
 
-const QUALITIES=['2160p 4K','1080p60','720p','480p'], SPEEDS=[0.75,1.0,1.25,1.5,2.0], CAPTIONS=['Off','English','বাংলা (Auto)'];
-const state = { cat:'All', tab:'home', current:null, isPlaying:false, progressPct:0, qualityIdx:1, speedIdx:1, captionIdx:0, sponsorBlock:true, loopVideo:false,
+const QUALITIES=['Auto','2160p 4K','1440p','1080p60','720p','480p','360p','240p','144p'];
+const CAP_LANGS=[{id:'en',label:'English'},{id:'bn',label:'বাংলা'},{id:'bn-auto',label:'বাংলা (auto-generated)'},{id:'hi-auto',label:'हिन्दी (auto-generated)'},{id:'es-auto',label:'Español (auto-translate)'},{id:'ar-auto',label:'العربية (auto-translate)'}];
+const CAP_LINES={ en:['Welcome back to the channel.','Today we are looking at how it all works.','Let me show you the main idea first.','Notice how smooth that feels.','Now the interesting part begins.','Thanks for watching, see you next time.'],
+  bn:['চ্যানেলে আবার স্বাগতম।','আজ আমরা দেখব এটা কীভাবে কাজ করে।','আগে মূল ধারণাটা দেখাই।','খেয়াল করুন কতটা স্মুথ লাগছে।','এখন আসল অংশ শুরু হচ্ছে।','দেখার জন্য ধন্যবাদ, আবার দেখা হবে।'] };
+const state = { cat:'All', tab:'home', current:null, isPlaying:false, progressPct:0, qualityIdx:3, speed:1, capOn:false, capLang:'en', autoplay:true, setPage:'main', sponsorBlock:true, loopVideo:false,
   liked:new Set(), disliked:new Set(), subs:new Set(['DevForge Labs']), downloads:new Set(), settingsOpen:false, sheetMode:null };
 
 // ===================== ELEMENTS =====================
@@ -447,29 +492,35 @@ addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(physics.mode==='fullscr
 let ctlTimer=null;
 function pokeControls(){ videoEl.classList.remove('hide-ctl'); clearTimeout(ctlTimer);
   if(state.isPlaying && physics.mode!=='minimized' && !state.settingsOpen) ctlTimer=setTimeout(()=>videoEl.classList.add('hide-ctl'),3000); }
-let lastTap={t:0,side:0}, tapTimer=null, seekAccum=0, seekAccumTimer=null;
+let lastTap={t:0,side:0}, tapTimer=null, seekAccum=0, seekAccumTimer=null, zoneTimer=null;
+function localPoint(e){ const r=videoEl.getBoundingClientRect(); return isRotated()?{x:e.clientY-r.top,y:r.right-e.clientX,w:r.height}:{x:e.clientX-r.left,y:e.clientY-r.top,w:r.width}; }
 function handleSurfaceTap(e){
-  const r=videoEl.getBoundingClientRect();
-  let frac = isRotated() ? (e.clientY-r.top)/r.height : (e.clientX-r.left)/r.width;
-  const side = frac<.5?-1:1, now=performance.now();
+  const p=localPoint(e); const side=p.x<p.w/2?-1:1, now=performance.now();
   if(now-lastTap.t<300 && lastTap.side===side){
-    clearTimeout(tapTimer); lastTap.t=0;
-    seekBy(side*10);
-    seekAccum += 10; clearTimeout(seekAccumTimer); seekAccumTimer=setTimeout(()=>seekAccum=0,700);
-    flashSeek(side, seekAccum);
+    clearTimeout(tapTimer); lastTap.t=now;
+    doSeekTap(side,p);
+  } else if(seekAccum>0 && now-lastTap.t<700 && lastTap.side===side && videoEl.dataset.seeking==='1'){
+    lastTap.t=now; doSeekTap(side,p); // keep accumulating while the zone is showing, like YouTube
   } else {
-    lastTap={t:now,side};
-    clearTimeout(tapTimer);
+    lastTap={t:now,side}; clearTimeout(tapTimer);
     tapTimer=setTimeout(()=>{ if(videoEl.classList.contains('hide-ctl')) pokeControls(); else { videoEl.classList.add('hide-ctl'); clearTimeout(ctlTimer); } },300);
   }
 }
-function seekBy(sec){ if(!state.current) return; state.progressPct=Math.max(0,Math.min(99.5,state.progressPct+sec/state.current.durationSec*100)); updatePlaybackUI(); }
-function flashSeek(side,total){
-  const b=$('seekFlashBadge'); b.style.left = side<0?'12%':'auto'; b.style.right = side>0?'12%':'auto';
-  $('seekFlashText').textContent=(side<0?'−':'+')+total+'s';
-  b.classList.remove('hidden'); b.classList.add('flex'); b.classList.remove('seek-flash'); void b.offsetWidth; b.classList.add('seek-flash');
-  clearTimeout(b._t); b._t=setTimeout(()=>{ b.classList.add('hidden'); b.classList.remove('flex'); },620);
+let accumSide=0;
+function doSeekTap(side,p){
+  if(side!==accumSide){ seekAccum=0; accumSide=side; }
+  seekBy(side*10); seekAccum+=10; clearTimeout(seekAccumTimer); seekAccumTimer=setTimeout(()=>seekAccum=0,900);
+  showSeekZone(side,seekAccum,p);
 }
+function showSeekZone(side,total,p){
+  const z=$(side<0?'seekL':'seekR'), o=$(side<0?'seekR':'seekL');
+  o.classList.remove('on'); z.classList.add('on'); z.querySelector('.seek-sec').textContent=total+' seconds'; videoEl.dataset.seeking='1';
+  if(p){ const r=document.createElement('div'); r.className='tap-ripple';
+    // ripple lives in the video's local (unrotated) coordinate space
+    r.style.left=p.x+'px'; r.style.top=p.y+'px'; videoEl.appendChild(r); setTimeout(()=>r.remove(),600); }
+  clearTimeout(zoneTimer); zoneTimer=setTimeout(()=>{ z.classList.remove('on'); videoEl.dataset.seeking=''; },750);
+}
+function seekBy(sec){ if(!state.current) return; state.progressPct=Math.max(0,Math.min(99.5,state.progressPct+sec/state.current.durationSec*100)); cancelEndCard(); updatePlaybackUI(); }
 
 // ---- Pointer gestures on the video surface ----
 videoEl.addEventListener('pointerdown',e=>{
@@ -526,52 +577,93 @@ videoEl.addEventListener('pointerup',endDrag); videoEl.addEventListener('pointer
   bar.addEventListener('pointerup',up); bar.addEventListener('pointercancel',up);
 })();
 
-// ===================== SETTINGS =====================
-function settingsRowsHTML(){
-  const rows=[
-    {a:'quality',i:'sliders-horizontal',l:'Quality',v:QUALITIES[state.qualityIdx]},
-    {a:'speed',i:'gauge',l:'Playback speed',v:SPEEDS[state.speedIdx]+'x'},
-    {a:'captions',i:'subtitles',l:'Captions',v:CAPTIONS[state.captionIdx]},
-    {a:'sponsor',i:'fast-forward',l:'SponsorBlock',v:state.sponsorBlock?'On':'Off',on:state.sponsorBlock},
-    {a:'loop',i:'repeat',l:'Loop video',v:state.loopVideo?'On':'Off',on:state.loopVideo}];
-  return rows.map(r=>`<button data-pset="${r.a}" class="w-full px-3 py-3 rounded-xl active:bg-white/10 flex items-center justify-between text-[13px]"><span class="flex items-center gap-3 font-medium"><i data-lucide="${r.i}" class="w-[18px] h-[18px] text-bt-muted"></i>${r.l}</span><span class="font-semibold ${r.on?'text-bt-amber':'text-bt-muted'}">${r.v}</span></button>`).join('');
+// ===================== SETTINGS (YouTube-style pages) =====================
+const capLabel = () => state.capOn ? (CAP_LANGS.find(l=>l.id===state.capLang)||CAP_LANGS[0]).label : 'Off';
+const spdLabel = v => (Math.round(v*100)/100)+'x';
+const SPEED_PRESETS=[0.25,0.5,0.75,1,1.25,1.5,2,3,4];
+function head(title,back){ return `<div class="flex items-center gap-2 pb-2 mb-1 ${back?'':'justify-between'}">
+  ${back?`<button data-back class="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><i data-lucide="arrow-left" class="w-[18px] h-[18px]"></i></button>`:''}
+  <span class="text-sm font-bold ${back?'flex-1':''}">${title}</span>
+  ${back?'':`<button data-close-settings class="p-1 rounded-full text-bt-muted"><i data-lucide="x" class="w-4 h-4"></i></button>`}</div>`; }
+function row(a,icon,label,val,extra){ return `<button data-pset="${a}" class="w-full px-2 py-3 rounded-xl active:bg-white/10 flex items-center justify-between text-[13px]"><span class="flex items-center gap-3 font-medium"><i data-lucide="${icon}" class="w-[18px] h-[18px] text-bt-muted"></i>${label}</span>${extra||`<span class="font-semibold text-bt-muted flex items-center gap-1">${val}<i data-lucide="chevron-right" class="w-4 h-4"></i></span>`}</button>`; }
+function pageHTML(){
+  const p=state.setPage;
+  if(p==='captions') return head('Captions',true)+`<div>`+[{id:'off',label:'Off'},...CAP_LANGS].map(l=>{ const sel = l.id==='off'?!state.capOn:(state.capOn&&state.capLang===l.id);
+    return `<button data-cap="${l.id}" class="w-full px-2 py-3 rounded-xl active:bg-white/10 flex items-center gap-3 text-[13px] ${sel?'text-bt-amber font-semibold':'font-medium'}"><span class="w-5 flex justify-center">${sel?'<i data-lucide="check" class="w-4 h-4"></i>':''}</span>${l.label}</button>`; }).join('')+`</div>`;
+  if(p==='quality') return head('Quality',true)+`<div>`+QUALITIES.map((q,i)=>{ const sel=i===state.qualityIdx; return `<button data-q="${i}" class="w-full px-2 py-3 rounded-xl active:bg-white/10 flex items-center gap-3 text-[13px] ${sel?'text-bt-amber font-semibold':'font-medium'}"><span class="w-5 flex justify-center">${sel?'<i data-lucide="check" class="w-4 h-4"></i>':''}</span>${q}</button>`; }).join('')+`</div>`;
+  if(p==='speed') return head('Playback speed',true)+`<div class="px-2 pt-2 pb-1">
+    <p class="text-center text-3xl font-extrabold tracking-tight mb-3"><span class="spd-val">${spdLabel(state.speed)}</span></p>
+    <div class="flex items-center gap-3"><button data-spd-step="-0.05" class="w-9 h-9 rounded-full bg-bt-pill text-lg font-bold active:bg-white/15">−</button>
+      <input type="range" class="spd flex-1" min="0.25" max="4" step="0.05" value="${state.speed}" />
+      <button data-spd-step="0.05" class="w-9 h-9 rounded-full bg-bt-pill text-lg font-bold active:bg-white/15">+</button></div>
+    <div class="flex flex-wrap gap-2 mt-4">${SPEED_PRESETS.map(v=>`<button data-spd="${v}" class="spd-chip px-3 py-1.5 rounded-full text-xs font-semibold ${Math.abs(state.speed-v)<.001?'bg-bt-amber text-bt-onAmber':'bg-bt-pill text-bt-text'}">${v===1?'Normal':spdLabel(v)}</button>`).join('')}</div></div>`;
+  return head('Playback settings',false)+`<div>`+
+    row('autoplay','play-circle','Autoplay','',`<span class="sw ${state.autoplay?'on':''}"><i></i></span>`)+
+    row('p-captions','subtitles','Captions',capLabel())+row('p-quality','sliders-horizontal','Quality',QUALITIES[state.qualityIdx])+row('p-speed','gauge','Playback speed',state.speed===1?'Normal':spdLabel(state.speed))+
+    row('sponsor','fast-forward','SponsorBlock','',`<span class="sw ${state.sponsorBlock?'on':''}"><i></i></span>`)+row('loop','repeat','Loop video','',`<span class="sw ${state.loopVideo?'on':''}"><i></i></span>`)+`</div>`;
 }
-function renderSettings(){
-  const h=settingsRowsHTML(); $('portraitSettingsRows').innerHTML=h; $('fsSettingsRows').innerHTML=h; lucide.createIcons();
+function renderSettings(animate){
+  const h=`<div class="${animate?'page-in':''}">${pageHTML()}</div>`;
+  $('portraitSettingsRows').innerHTML=h; $('fsSettingsRows').innerHTML=h; lucide.createIcons(); updatePlaybackUI();
 }
+function setSpeed(v){ state.speed=Math.max(.25,Math.min(4,Math.round(v*100)/100)); document.querySelectorAll('.spd-val').forEach(e=>e.textContent=spdLabel(state.speed));
+  document.querySelectorAll('input.spd').forEach(i=>{ if(Number(i.value)!==state.speed) i.value=state.speed; });
+  document.querySelectorAll('.spd-chip').forEach(c=>{ const on=Math.abs(state.speed-Number(c.dataset.spd))<.001; c.className=`spd-chip px-3 py-1.5 rounded-full text-xs font-semibold ${on?'bg-bt-amber text-bt-onAmber':'bg-bt-pill text-bt-text'}`; });
+  updatePlaybackUI(); }
 document.addEventListener('click',e=>{
+  if(e.target.closest('[data-close-settings]')){ closeSettings(); return; }
+  if(e.target.closest('[data-back]')){ state.setPage='main'; renderSettings(true); return; }
+  const cap=e.target.closest('[data-cap]'); if(cap){ const id=cap.dataset.cap; if(id==='off') state.capOn=false; else { state.capOn=true; state.capLang=id; } state.setPage='main'; renderSettings(true); return; }
+  const q=e.target.closest('[data-q]'); if(q){ state.qualityIdx=Number(q.dataset.q); state.setPage='main'; renderSettings(true); return; }
+  const st=e.target.closest('[data-spd-step]'); if(st){ setSpeed(state.speed+Number(st.dataset.spdStep)); return; }
+  const sp=e.target.closest('[data-spd]'); if(sp){ setSpeed(Number(sp.dataset.spd)); return; }
   const b=e.target.closest('[data-pset]'); if(!b) return; const a=b.dataset.pset;
-  if(a==='quality') state.qualityIdx=(state.qualityIdx+1)%QUALITIES.length;
-  if(a==='speed') state.speedIdx=(state.speedIdx+1)%SPEEDS.length;
-  if(a==='captions') state.captionIdx=(state.captionIdx+1)%CAPTIONS.length;
+  if(a==='p-captions'||a==='p-quality'||a==='p-speed'){ state.setPage=a.slice(2); renderSettings(true); return; }
+  if(a==='autoplay'){ state.autoplay=!state.autoplay; if(!state.autoplay) cancelEndCard(); }
   if(a==='sponsor') state.sponsorBlock=!state.sponsorBlock;
   if(a==='loop') state.loopVideo=!state.loopVideo;
-  updatePlaybackUI(); renderSettings();
+  renderSettings(false);
 });
-function openSettings(){ renderSettings(); state.settingsOpen=true; videoEl.classList.remove('hide-ctl'); clearTimeout(ctlTimer);
+document.addEventListener('input',e=>{ if(e.target.matches('input.spd')) setSpeed(Number(e.target.value)); });
+function openSettings(){ state.setPage='main'; renderSettings(false); state.settingsOpen=true; videoEl.classList.remove('hide-ctl'); clearTimeout(ctlTimer);
   $(physics.mode==='fullscreen'?'fsSettingsBackdrop':'portraitSettingsBackdrop').classList.add('open'); }
 function closeSettings(){ const was=state.settingsOpen; state.settingsOpen=false; $('portraitSettingsBackdrop').classList.remove('open'); $('fsSettingsBackdrop').classList.remove('open'); if(was) pokeControls(); }
 
 // ===================== PLAYER LIFECYCLE =====================
 let playbackTimer=null;
-function openVideo(v){
-  v._relInit=false; state.current=v; state.isPlaying=true; state.progressPct=0;
-  if(physics.mode==='fullscreen') exitFullscreen();
+function openVideo(v,keepFs){
+  v._relInit=false; state.current=v; state.isPlaying=true; state.progressPct=0; cancelEndCard();
+  const stayFs = !!keepFs && physics.mode==='fullscreen';
+  if(physics.mode==='fullscreen' && !stayFs) exitFullscreen();
   const d=dims(), cs=corners(d); const c=cs[physics.corner]||cs.BR;
   physics.miniX=c.x; physics.miniY=c.y; physics.miniTargetX=c.x; physics.miniTargetY=c.y;
   videoEl.classList.remove('hidden'); watchBackdrop.classList.remove('hidden'); watchDetails.classList.remove('hidden');
   $('vThumb').src=v.thumb; $('fsTitleText').textContent=v.title; $('fsChannelText').textContent=v.channel;
   renderWatch(); watchDetails.scrollTop=0;
-  physics.morph=.85; uiCache={}; goExpanded(-2.4);
+  if(stayFs){ applyGeometry(); pokeControls(); } else { physics.morph=.85; uiCache={}; goExpanded(-2.4); }
   clearInterval(playbackTimer);
   playbackTimer=setInterval(()=>{
     if(!state.isPlaying||!state.current) return;
-    state.progressPct=Math.min(100,state.progressPct+(100/state.current.durationSec)*SPEEDS[state.speedIdx]*.5);
+    state.progressPct=Math.min(100,state.progressPct+(100/state.current.durationSec)*state.speed*.5);
     if(state.sponsorBlock&&state.progressPct>=38&&state.progressPct<48){ state.progressPct=48.5; showToast('SponsorBlock skipped a sponsor segment'); }
-    if(state.progressPct>=100){ if(state.loopVideo) state.progressPct=0; else { state.isPlaying=false; pokeControls(); } }
+    if(state.progressPct>=100){ if(state.loopVideo) state.progressPct=0; else onEnded(); }
     updatePlaybackUI();
   },500);
   updatePlaybackUI();
+}
+let endTimer=null;
+function cancelEndCard(){ clearTimeout(endTimer); const c=$('endCard'); c.classList.add('hidden'); c.classList.remove('flex'); const fg=$('endRingFg'); fg.style.transition='none'; fg.style.strokeDashoffset='94.25'; }
+function onEnded(){
+  state.isPlaying=false; updatePlaybackUI();
+  const c=$('endCard'); c.classList.remove('hidden'); c.classList.add('flex'); videoEl.classList.remove('hide-ctl'); clearTimeout(ctlTimer);
+  const next=related[0];
+  if(state.autoplay && next){
+    $('endNext').classList.remove('hidden'); $('endReplay').classList.add('hidden'); $('endReplay').classList.remove('flex');
+    $('endThumb').src=next.thumb; $('endTitle').textContent=next.title;
+    const fg=$('endRingFg'); fg.style.transition='none'; fg.style.strokeDashoffset='94.25'; void fg.getBoundingClientRect();
+    fg.style.transition='stroke-dashoffset 5s linear'; fg.style.strokeDashoffset='0';
+    endTimer=setTimeout(()=>{ if(state.current&&physics.mode!=='closed') openVideo(next, physics.mode==='fullscreen'); },5000);
+  } else { $('endNext').classList.add('hidden'); $('endReplay').classList.remove('hidden'); $('endReplay').classList.add('flex'); }
 }
 function closePlayer(){
   if(physics.mode==='fullscreen') exitFullscreen();
@@ -584,8 +676,13 @@ function updatePlaybackUI(){
   $('vBuffer').style.width=Math.min(100,state.progressPct+22)+'%';
   $('vSponsorBar').classList.toggle('hidden',!state.sponsorBlock);
   $('vTimeLabel').textContent=`${formatTime(cur)} / ${v.duration}`;
-  $('vQualityPill').textContent=`${QUALITIES[state.qualityIdx]} • ${SPEEDS[state.speedIdx]}x`;
-  $('vCaptionsLabel').textContent=state.captionIdx===0?'CC':'CC·'+(state.captionIdx===1?'EN':'BN');
+  $('vQualityPill').textContent=`${QUALITIES[state.qualityIdx]} • ${spdLabel(state.speed)}`;
+  const cb=$('vCaptionsBtn'); cb.className=`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${state.capOn?'bg-bt-amber text-bt-onAmber':'bg-black/50 text-white'}`;
+  const lines=CAP_LINES[state.capLang.startsWith('bn')?'bn':'en'], idx=Math.floor(cur/4)%lines.length;
+  $('captionBox').classList.toggle('hidden',!state.capOn); if(state.capOn) $('captionText').textContent=lines[idx];
+  $('autoTrack').classList.toggle('bg-bt-amber',state.autoplay); $('autoTrack').classList.toggle('bg-white/30',!state.autoplay);
+  $('autoThumb').style.transform=state.autoplay?'translateX(16px)':'translateX(0)';
+  document.querySelectorAll('.au-play').forEach(el=>el.classList.toggle('hidden',!state.autoplay)); document.querySelectorAll('.au-pause').forEach(el=>el.classList.toggle('hidden',state.autoplay));
   document.querySelectorAll('.ic-pause').forEach(el=>el.classList.toggle('hidden',!state.isPlaying));
   document.querySelectorAll('.ic-play').forEach(el=>el.classList.toggle('hidden',state.isPlaying));
 }
@@ -654,6 +751,7 @@ function cmHTML(c,isReply){
         <button class="cm-reply px-3 py-1.5 rounded-full active:bg-white/10 text-[12px] font-semibold text-bt-text/80">Reply</button>
         ${c.hearted?`<span class="ml-1 flex items-center gap-1 text-[11px] text-bt-muted"><span class="w-4 h-4 rounded-full bg-bt-amber text-bt-onAmber flex items-center justify-center text-[8px] font-bold">DF</span><i data-lucide="heart" class="w-3 h-3 fill-current text-rose-500"></i></span>`:''}
       </div>
+      <div class="rbox replies"><div></div></div>
       ${!isReply&&c.replies.length?`<button class="cm-replies-btn flex items-center gap-1.5 text-[13px] font-semibold text-bt-amber py-1 -ml-0.5"><i data-lucide="chevron-down" class="w-4 h-4 chev"></i><span>${c.replies.length} ${c.replies.length>1?'replies':'reply'}</span></button>
         <div class="replies"><div>${c.replies.map(r=>cmHTML(r,true)).join('')}</div></div>`:''}
     </div></div>`;
@@ -696,8 +794,32 @@ $('sheetBody').addEventListener('click',e=>{
   else if(e.target.closest('.cm-dislike')){ c.disliked=!c.disliked; if(c.disliked) c.liked=false; refreshCm(row,c,false); }
   else if(e.target.closest('.cm-more')){ const t=row.querySelector('.cm-text'); t.classList.toggle('line-clamp-3'); e.target.closest('.cm-more').textContent=t.classList.contains('line-clamp-3')?'Read more':'Show less'; }
   else if(e.target.closest('.cm-replies-btn')){ const b=e.target.closest('.cm-replies-btn'); const rep=b.nextElementSibling; const open=rep.classList.toggle('open'); b.classList.toggle('open-chev',open); }
-  else if(e.target.closest('.cm-reply')){ const inp=$('cmInput'); $('sheetBody').scrollTo({top:0,behavior:'smooth'}); inp.focus(); inp.value='@'+c.name+' '; inp.dispatchEvent(new Event('input')); }
+  else if(e.target.closest('.cm-reply')){ toggleReplyBox(row,c); }
+  else if(e.target.closest('.rb-cancel')){ closeReplyBox(row); }
+  else if(e.target.closest('.rb-post')){ postReply(row,c); }
 });
+$('sheetBody').addEventListener('input',e=>{ if(!e.target.classList.contains('rb-input')) return; const ok=e.target.value.trim().length>0; const p=e.target.closest('.rbox').querySelector('.rb-post'); p.disabled=!ok; p.className=`rb-post px-4 py-1.5 rounded-full text-xs font-bold ${ok?'bg-bt-amber text-bt-onAmber':'bg-white/10 text-bt-muted'}`; });
+function ownRbox(row){ return [...row.children].find(x=>x.classList&&x.classList.contains('rbox')) || row.querySelector(':scope > div.min-w-0 > .rbox'); }
+function toggleReplyBox(row,c){
+  const box=row.querySelector(':scope > .min-w-0 > .rbox'); const inner=box.firstElementChild;
+  if(box.classList.contains('open')){ closeReplyBox(row); return; }
+  document.querySelectorAll('#sheetBody .rbox.open').forEach(b=>b.classList.remove('open'));
+  inner.innerHTML=`<div class="flex gap-2.5 items-start pt-2"><div class="w-6 h-6 rounded-full bg-bt-amber text-bt-onAmber flex items-center justify-center text-[9px] font-bold shrink-0">BT</div>
+    <div class="flex-1"><input class="rb-input w-full bg-transparent border-b border-white/15 focus:border-bt-amber outline-none text-[13px] py-1.5 transition" placeholder="Reply to @${c.name}…" />
+    <div class="flex justify-end gap-2 pt-2 pb-1"><button class="rb-cancel px-3 py-1.5 rounded-full text-xs font-semibold text-bt-text/80">Cancel</button><button class="rb-post px-4 py-1.5 rounded-full text-xs font-bold bg-white/10 text-bt-muted" disabled>Reply</button></div></div></div>`;
+  box.classList.add('open');
+  setTimeout(()=>{ const i=inner.querySelector('.rb-input'); i.focus({preventScroll:true}); box.scrollIntoView({block:'nearest',behavior:'smooth'}); },60);
+}
+function closeReplyBox(row){ const box=row.querySelector(':scope > .min-w-0 > .rbox'); box.classList.remove('open'); setTimeout(()=>{ if(!box.classList.contains('open')) box.firstElementChild.innerHTML=''; },320); }
+function postReply(row,target){
+  const inp=row.querySelector(':scope > .min-w-0 > .rbox .rb-input'); const text=inp.value.trim(); if(!text) return;
+  const v=state.current; const topRow=row.parentElement.closest('.cm')||row; const parent=findComment(v.comments,topRow.dataset.cid);
+  const rep=makeComment(false); Object.assign(rep,{name:'bilai_user',color:'bg-bt-amber',age:'Just now',text:(target.id!==parent.id&&!text.startsWith('@')?'@'+target.name+' ':'')+text,likes:0,hearted:false,local:true});
+  parent.replies.push(rep); v.commentCount++; $('sheetHeading').textContent=`Comments · ${formatCount(v.commentCount)}`; $('wCommentCount').textContent=formatCount(v.commentCount);
+  const tmp=document.createElement('div'); tmp.innerHTML=cmHTML(parent); const nr=tmp.firstElementChild; nr.classList.remove('row-in'); topRow.replaceWith(nr); lucide.createIcons();
+  nr.querySelector('.replies:not(.rbox)').classList.add('open'); nr.querySelector('.cm-replies-btn').classList.add('open-chev');
+  const el=nr.querySelector(`[data-cid="${rep.id}"]`); el.classList.remove('row-in'); el.classList.add('cm-in'); setTimeout(()=>el.scrollIntoView({block:'nearest',behavior:'smooth'}),80);
+}
 function refreshCm(row,c,popLike){
   const lb=row.querySelector('.cm-like'), db=row.querySelector('.cm-dislike');
   lb.className=`cm-like flex items-center gap-1.5 px-2 py-1.5 rounded-full active:bg-white/10 ${c.liked?'text-bt-amber':'text-bt-text/80'}`;
@@ -769,11 +891,14 @@ $('wMiniQuickBtn').addEventListener('click',()=>goMinimized(2.5));
 $('vMiniCloseBtn').addEventListener('click',closePlayer);
 function togglePlay(){ state.isPlaying=!state.isPlaying; updatePlaybackUI(); pokeControls(); }
 $('vPlayBtn').addEventListener('click',togglePlay); $('vMiniPlayBtn').addEventListener('click',togglePlay);
-$('vRewBtn').addEventListener('click',()=>{ seekBy(-10); flashSeek(-1,10); pokeControls(); });
-$('vFwdBtn').addEventListener('click',()=>{ seekBy(10); flashSeek(1,10); pokeControls(); });
-$('vCaptionsBtn').addEventListener('click',()=>{ state.captionIdx=(state.captionIdx+1)%CAPTIONS.length; updatePlaybackUI(); showToast('Captions: '+CAPTIONS[state.captionIdx]); pokeControls(); });
+$('vRewBtn').addEventListener('click',()=>{ doSeekTap(-1,null); pokeControls(); });
+$('vFwdBtn').addEventListener('click',()=>{ doSeekTap(1,null); pokeControls(); });
+$('vCaptionsBtn').addEventListener('click',()=>{ state.capOn=!state.capOn; updatePlaybackUI(); showToast(state.capOn?'Captions on · '+capLabel():'Captions off'); pokeControls(); });
+$('vAutoBtn').addEventListener('click',()=>{ state.autoplay=!state.autoplay; if(!state.autoplay) cancelEndCard(); updatePlaybackUI(); showToast(state.autoplay?'Autoplay is on':'Autoplay is off'); pokeControls(); });
+$('endCancel').addEventListener('click',()=>{ cancelEndCard(); $('endNext').classList.add('hidden'); $('endReplay').classList.remove('hidden'); $('endReplay').classList.add('flex'); $('endCard').classList.remove('hidden'); $('endCard').classList.add('flex'); });
+$('endPlayNow').addEventListener('click',()=>{ const n=related[0]; if(n) openVideo(n, physics.mode==='fullscreen'); });
+$('endReplay').addEventListener('click',()=>{ cancelEndCard(); state.progressPct=0; state.isPlaying=true; updatePlaybackUI(); pokeControls(); });
 $('vSettingsBtn').addEventListener('click',openSettings);
-$('closePortraitSettingsBtn').addEventListener('click',closeSettings); $('closeFsSettingsBtn').addEventListener('click',closeSettings);
 $('portraitSettingsBackdrop').addEventListener('click',e=>{ if(e.target.id==='portraitSettingsBackdrop') closeSettings(); });
 $('fsSettingsBackdrop').addEventListener('click',e=>{ if(e.target.id==='fsSettingsBackdrop') closeSettings(); });
 $('descTrigger').addEventListener('click',()=>openSheet('desc'));
