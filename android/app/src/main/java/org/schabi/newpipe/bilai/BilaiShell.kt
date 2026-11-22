@@ -378,6 +378,7 @@ class BilaiShell(private val activity: ComponentActivity) {
             fixtureSignedIn = true
             tab = Tab.YOU
         }
+        if (intent.getBooleanExtra("bt.home_fixture", false)) homeFeed.useReviewFixture()
         if (intent.getBooleanExtra("bt.subs_fixture", false)) fixtureSubs = true
         if (intent.getBooleanExtra("bt.you_fixture", false)) fixtureYou = true
         if (intent.getBooleanExtra("bt.shorts_fixture", false)) {
