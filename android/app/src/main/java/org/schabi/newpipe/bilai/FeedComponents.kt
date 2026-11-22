@@ -180,9 +180,11 @@ fun VideoCard(
 
 fun metadataLine(context: android.content.Context, item: StreamInfoItem): String {
     val parts = ArrayList<String>(3)
-    if (!item.uploaderName.isNullOrEmpty()) parts.add(item.uploaderName)
+    val uploader: String? = item.uploaderName
+    if (!uploader.isNullOrEmpty()) parts.add(uploader)
     if (item.viewCount >= 0) parts.add(Localization.shortViewCount(context, item.viewCount))
-    if (!item.textualUploadDate.isNullOrEmpty()) parts.add(item.textualUploadDate)
+    val date: String? = item.textualUploadDate
+    if (!date.isNullOrEmpty()) parts.add(date)
     return parts.joinToString(" • ")
 }
 

@@ -1,100 +1,49 @@
-<hr>
-<p align="center"><img src="assets/logo.png" width="150"></p> 
-<h2 align="center"><b>PipePipe</b></h2>
-<h4 align="center">
-NewPipe, reimagined: faster, more stable, and packed with more features.</h4>
-<p align="center"><a href="https://f-droid.org/packages/InfinityLoop1309.NewPipeEnhanced/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid"  width="207" /></a>
-<a href="https://apt.izzysoft.de/fdroid/index/apk/InfinityLoop1309.NewPipeEnhanced"><img src="assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" width="207" /></a></p>
-<hr>
+# BilaiTube
 
-## Beyond NewPipe
+BilaiTube is a free, open-source Android YouTube client with a YouTube-style interface in a
+warm amber colour scheme. Everything runs on your device: videos are extracted, streamed,
+downloaded and stored locally. There is no BilaiTube server and no tracking.
 
-#### YouTube Enhancements
-* Integrate SponsorBlock for skipping sponsored segments (YouTube & BiliBili) 
-* Restore YouTube dislikes with ReturnYouTubeDislike 
-* Show original titles on YouTube (non-localized) 
-* Log in to access restricted or premium content 
+## Features
 
-#### Media Features
-* Display live chats in danmaku-style overlays
-* Support AV1 and VP9 codecs for efficient, high-quality playback 
-* Enable music player mode with background playback 
+- YouTube-style home feed with category chips and a Shorts shelf (loaded on-device; personalised
+  when signed in, regional and generic as a guest)
+- Spring-physics watch page: drag the video down and it morphs smoothly into a floating mini
+  player that you can drag anywhere and that snaps to the nearest corner; fling sideways to
+  dismiss, tap to expand
+- Subscriptions, history, local playlists, downloads (video and audio), background playback
+  and Picture-in-Picture
+- SponsorBlock, Return YouTube Dislike
+- Warm Amber dark theme with an optional AMOLED black mode
+- Guest mode by default; optional sign-in for a personalised feed and synced subscriptions
 
-#### Filtering
-* Apply advanced search filters for better discovery 
-* Filter out unwanted items by keywords or channels 
-* Block shorts and paid videos for a cleaner feed 
+## Building
 
-#### Playback Controls
-* Use swipe-to-seek and fullscreen gestures for intuitive navigation 
-* Long-press to speed up playback 
-* Set a sleep timer for bedtime listening 
+The project is a normal Gradle build and needs JDK 25 and the Android SDK.
 
-#### Enhanced Playlists
-* Download full playlists at once 
-* Search and sort within local playlists and histories
+```
+curl -L -o android/ffmpeg/ffmpeg-kit.aar \
+  https://github.com/InfinityLoop1308/PipePipeClient/raw/43ef494c1a1792a774c223e1982ff1e794c49017/ffmpeg/ffmpeg-kit.aar
+cd android
+./gradlew :app:assembleDebug
+```
 
-#### Plugins
-* Add new services through plugins (available from 5.6.0)
-* Browse community plugins in [awesome-pipepipe-plugins](https://github.com/InfinityLoop1308/awesome-pipepipe-plugins)
+Every push to the `youtube-ui` branch is built by GitHub Actions
+(`.github/workflows/build-apk.yml`); download the APK from the run's `BilaiTube-APK` artifact.
 
-... and many more improvements!
+## Repository layout
 
+- `android/` – the Android app (`com.masharzy.bilaitube`)
+- `PipePipeExtractor/` – the on-device extractor
+- `main` branch – an untouched snapshot of upstream PipePipe, kept for reference and syncing
 
-## Screenshots
+## Credits and license
 
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/00-v2.png" width=640>](fastlane/metadata/android/en-US/images/phoneScreenshots/00-v1.png)
+BilaiTube is built on [PipePipe](https://github.com/InfinityLoop1308/PipePipe) by InfinityLoop1308,
+which is itself based on [NewPipe](https://github.com/TeamNewPipe/NewPipe) and
+[NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) by the NewPipe team and
+contributors. The extractor, the playback engine and many other parts come from those projects.
+Thank you to everyone who wrote them.
 
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/01-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/02-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/03-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/04-v3.png)
-<br/>
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/05-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/06-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/07-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/07-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/08-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/08-v3.png)
-<br/>
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/09-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/09-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/10-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/10-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/11-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/11-v3.png)
-[<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/12-v3.png" width=160>](fastlane/metadata/android/en-US/images/phoneScreenshots/12-v3.png)
-
-
-## About this fork
-
-Due to differences in development philosophy, I forked NewPipe in early 2022 and began independent development based on it.
-
-This means that PipePipe neither receives updates from NewPipe nor pushes updates to NewPipe. They have become two separate projects. Issues that occur in NewPipe don't necessarily happen in PipePipe, and changes made in NewPipe may not be adopted by PipePipe. In contrast, forks like Tubular track the latest version of NewPipe and develop based on it.
-
-Making a hard fork allows us to effectively address issues with quick fixes and maintain frequent feature updates.
-
-## About sign in
-
-PipePipe will ONLY use the login cookie for the specified scenarios you set. You can configure it in "Cookie Functions."
-
-For YouTube, the cookie will only be used when retrieving playback streams.
-
-## Contribute
-
-Issues and PRs are welcomed.
-
-Want support for a new service? Write a plugin (available from 5.6.0). Start from the [plugin template](https://github.com/InfinityLoop1308/PipePipePluginTemplate), then submit it to [awesome-pipepipe-plugins](https://github.com/InfinityLoop1308/awesome-pipepipe-plugins) so users can install it from the app.
-
-## Donation
-
-If you find PipePipe useful, please consider becoming a supporter on Ko-Fi. Your support is important to me and helps me add more exciting new features. Every bit counts! 😇
-
-Liberapay: https://liberapay.com/PipePipe
-
-Ko-fi: https://ko-fi.com/pipepipe
-
-## Community
-
-[PipePipe Wiki](https://priveetee.github.io/Docs-PipePipe) maintained by [@Priveetee](https://github.com/Priveetee)
-
-## Special Thanks
-
-[Priveetee](https://github.com/Priveetee) for [researching SABR](https://priveetee.github.io/Docs-PipePipe/developer-guide/introduction.html) and implementing support for it.
-
-[AioiLight](https://github.com/AioiLight) for providing some code of NicoNico service.
+BilaiTube is licensed under the [GNU General Public License v3.0](LICENSE), the same license as
+its upstream projects. BilaiTube is not affiliated with or endorsed by YouTube or Google.
