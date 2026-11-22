@@ -62,7 +62,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         applyDebugIntent(activity.intent)
     }
 
-    val view = ComposeView(activity).apply { setContent { Content() } }
+    val view = ComposeView(activity).apply { setContent { RenderShell() } }
 
     fun applyDebugIntent(intent: Intent) {
         if (!BuildConfig.DEBUG) return
@@ -80,7 +80,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     @Composable
-    private fun Content() {
+    private fun RenderShell() {
         BackHandler(enabled = tab != Tab.HOME) { select(Tab.HOME) }
         BilaiTheme(dark, red) {
             val colors = LocalBilaiColors.current
