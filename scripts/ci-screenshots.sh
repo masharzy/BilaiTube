@@ -17,6 +17,19 @@ if command -v google-chrome >/dev/null; then
       --window-size=390,844 --force-device-scale-factor=1 --virtual-time-budget=1800 \
       --screenshot="$PWD/$out/reference_$name.png" "file://$PWD/$ref"
   done
+  for tab in shorts subs you; do
+    python3 - "$tab" <<'PYCODE'
+from pathlib import Path
+import sys
+tab=sys.argv[1]
+ref=Path("docs/reference/prototype.html").read_text()
+ref=ref.replace("tab: 'home',", "tab: '"+tab+"',", 1)
+Path("/tmp/bilai-reference-"+tab+".html").write_text(ref)
+PYCODE
+    timeout 40s google-chrome --headless --no-sandbox --disable-dev-shm-usage --hide-scrollbars \
+      --window-size=390,844 --force-device-scale-factor=1 --virtual-time-budget=1800 \
+      --screenshot="$PWD/$out/reference_$tab.png" "file:///tmp/bilai-reference-$tab.html"
+  done
 fi
 adb install -r "$apk" | tee "$out/install.txt"
 adb logcat -c
