@@ -116,7 +116,7 @@ capture_page 14_search open_search Search
 capture_page library_history open_history History
 capture_page library_watch_later open_watch_later 'Watch Later'
 capture_page library_playlists open_playlists Playlists
-capture_page library_downloads open_downloads 'Offline Downloads'
+capture_page library_downloads open_downloads 'Downloads'
 capture_page app_settings open_app_settings Appearance
 capture_page account_sign_in open_account 'Choose account'
 # Evidence fixtures are debug-only; they do not log in or write real subscriptions.
@@ -164,13 +164,13 @@ dump_ui "$out/fullscreen_landscape.xml" player_surface
 adb exec-out screencap -p > "$out/fullscreen_landscape.png"
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_settings
 sleep 1
-dump_ui "$out/fullscreen_settings_drawer.xml" 'Player settings'
+dump_ui "$out/fullscreen_settings_drawer.xml" 'Playback settings'
 adb exec-out screencap -p > "$out/fullscreen_settings_drawer.png"
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action exit_fullscreen
 sleep 2
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_settings
 sleep 1
-dump_ui "$out/settings_portrait.xml" 'Player settings'
+dump_ui "$out/settings_portrait.xml" 'Playback settings'
 adb exec-out screencap -p > "$out/settings_portrait.png"
 adb shell input keyevent BACK
 capture_page settings_captions_page open_captions Captions
@@ -209,7 +209,7 @@ sleep 1
 adb exec-out screencap -p > "$out/autoplay_endcard.png"
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
   -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4"
-capture_page 13_video_menu open_menu 'Video options'
+capture_page 13_video_menu open_menu 'Play in background'
 adb shell dumpsys gfxinfo "$pkg" reset >/dev/null
 adb shell input swipe 585 300 585 1500 2500 &
 swipe_job=$!
