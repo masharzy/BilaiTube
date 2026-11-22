@@ -25,13 +25,14 @@ dump_ui() {
         adb pull "$remote" "$dst" && grep -q "$tag" "$dst"; then
       return 0
     fi
-    if [ -s "$dst" ] && grep -q 'android:id/immersive_cling_title' "$dst"; then
+    if [ -s "$dst" ] && grep -Eq 'android:id/immersive_cling_title|Pixel Launcher isn.t responding' "$dst"; then
       point=$(python3 - "$dst" <<'PYCODE'
 import re, sys, xml.etree.ElementTree as ET
 for node in ET.parse(sys.argv[1]).iter("node"):
-    if node.get("resource-id") == "android:id/ok":
+    if node.get("resource-id") in ("android:id/ok", "android:id/aerr_wait"):
         x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
         print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
 PYCODE
 )
       if [ -n "$point" ]; then adb shell input tap $point; fi
