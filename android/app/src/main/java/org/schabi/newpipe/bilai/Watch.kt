@@ -72,7 +72,8 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: Boolean,
                    onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float, pictureInPicture: Boolean,
                    captionsOn: Boolean, toggleCaptions: () -> Unit,
-                   autoplay: Boolean, toggleAutoplay: () -> Unit, close: () -> Unit, playNext: (String, String) -> Unit,
+                   autoplay: Boolean, toggleAutoplay: () -> Unit, liked: Boolean, disliked: Boolean,
+                   subscribed: Boolean, close: () -> Unit, playNext: (String, String) -> Unit,
                    autoplayNext: (String, String) -> Unit, overlay: (String) -> Unit) {
     val p = LocalBilaiColors.current
     val playback by engine.state.collectAsState()
@@ -232,13 +233,13 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     Box(Modifier.watchClick(detailsTouchable) { overlay("Channel") }) {
                         FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
                     }
-                    if (info != null) WatchPill("Subscribe", p.onAccent, p.accent, enabled = detailsTouchable) {
-                        overlay("Sign in to continue")
+                    if (info != null) WatchPill(if (subscribed) "Subscribed" else "Subscribe", p.onAccent, p.accent, enabled = detailsTouchable) {
+                        overlay("Subscribe")
                     }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WatchPill("Like", p.text, p.elevated, enabled = detailsTouchable) { overlay("Sign in to continue") }
-                    WatchPill("Dislike", p.text, p.elevated, enabled = detailsTouchable) { overlay("Sign in to continue") }
+                    WatchPill("Like", if (liked) p.accent else p.text, p.elevated, enabled = detailsTouchable) { overlay("Like") }
+                    WatchPill("Dislike", if (disliked) p.accent else p.text, p.elevated, enabled = detailsTouchable) { overlay("Dislike") }
                     WatchPill("Float", p.accent, p.accentSoft, enabled = detailsTouchable) { onCompact(true) }
                     WatchPill("Share", p.text, p.elevated, enabled = detailsTouchable) { overlay("Share") }
                     if (info != null) WatchPill("Download", p.text, p.elevated, enabled = detailsTouchable) {

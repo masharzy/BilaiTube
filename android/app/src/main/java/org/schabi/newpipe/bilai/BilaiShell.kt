@@ -23,6 +23,9 @@ import androidx.preference.PreferenceManager
 import org.schabi.newpipe.R
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.bilai.engine.ServicePlaybackEngine
+import org.schabi.newpipe.bilai.engine.YoutubeAccountActions
+import org.schabi.newpipe.bilai.engine.YoutubeAccountActions.Reaction
+import io.reactivex.rxjava3.disposables.CompositeDisposable
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -159,6 +162,45 @@ class BilaiShell(private val activity: ComponentActivity) {
         }
     }
 
+    private val accountRequests = CompositeDisposable()
+    private val reactions = mutableStateMapOf<String, Reaction>()
+    private val subscriptions = mutableStateMapOf<String, Boolean>()
+    private val pendingAccountActions = mutableStateMapOf<String, Boolean>()
+
+    private fun mutateAccount(key: String, operation: io.reactivex.rxjava3.core.Completable,
+                              success: () -> Unit = {}, failure: () -> Unit = {}) {
+        if (pendingAccountActions[key] == true) return
+        pendingAccountActions[key] = true
+        accountRequests.add(operation.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
+            .subscribe({
+                pendingAccountActions.remove(key)
+                success()
+            }, {
+                pendingAccountActions.remove(key)
+                failure()
+                toast = "YouTube couldn't complete the action"
+            }))
+    }
+
+    private fun react(reaction: Reaction) {
+        if (!signedIn) { accountAction(); return }
+        val id = engine.current.value?.id ?: return
+        if (pendingAccountActions[id] == true) return
+        val previous = reactions[id] ?: Reaction.NONE
+        val next = if (previous == reaction) Reaction.NONE else reaction
+        reactions[id] = next
+        mutateAccount(id, YoutubeAccountActions.react(id, next), failure = { reactions[id] = previous })
+    }
+
+    private fun subscribeTo(url: String) {
+        if (!signedIn) { accountAction(); return }
+        if (pendingAccountActions[url] == true) return
+        val previous = subscriptions[url] == true
+        subscriptions[url] = !previous
+        mutateAccount(url, YoutubeAccountActions.subscribe(url, !previous),
+            failure = { subscriptions[url] = previous })
+    }
+
     private fun accountAction() {
         if (signedIn) toast = "This action is unavailable"
         else overlay = "Sign in to continue"
@@ -247,6 +289,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     fun dispose() {
+        accountRequests.dispose()
         if (BuildConfig.DEBUG) activity.unregisterReceiver(debugReceiver)
         engine.detach()
     }
@@ -379,8 +422,12 @@ class BilaiShell(private val activity: ComponentActivity) {
                         BottomNav(tab, ::select)
                     }
                     video?.let { (url, title) ->
+                        val metadata by engine.current.collectAsState()
+                        val reaction = reactions[metadata?.id] ?: Reaction.NONE
                         Watch(url, title, engine, compact, { compact = it }, videoOnly, ::requestFullscreen, playbackSpeed, pip,
                             captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
+                            liked = reaction == Reaction.LIKE, disliked = reaction == Reaction.DISLIKE,
+                            subscribed = subscriptions[metadata?.uploaderUrl] == true,
                             close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play,
                             autoplayNext = { nextUrl, nextTitle ->
@@ -394,6 +441,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                                             openChannel(it, info.uploaderName.orEmpty())
                                         }
                                     }
+                                    "Like" -> react(Reaction.LIKE)
+                                    "Dislike" -> react(Reaction.DISLIKE)
+                                    "Subscribe" -> metadata?.uploaderUrl?.let(::subscribeTo)
                                     "Sign in to continue" -> accountAction()
                                     "Share" -> share(url)
                                     "Download" -> toast = if (engine.download()) "Download started" else "Download unavailable"
@@ -418,6 +468,10 @@ class BilaiShell(private val activity: ComponentActivity) {
                                         if (signedIn) {
                                             BilaiAccountStore.clear(activity)
                                             localReplies.clear()
+                                            accountRequests.clear()
+                                            pendingAccountActions.clear()
+                                            reactions.clear()
+                                            subscriptions.clear()
                                             LoginSessions.onLogout(activity,
                                                 LoginSessions.youtube(activity))
                                             refreshAccount()
@@ -547,6 +601,8 @@ class BilaiShell(private val activity: ComponentActivity) {
             onDispose { request.dispose() }
         }
         var replyTo by remember(url) { mutableStateOf<String?>(null) }
+        var composeComment by remember(url) { mutableStateOf(false) }
+        var draft by remember(url) { mutableStateOf("") }
         var newest by remember(url) { mutableStateOf(false) }
         val sorted = remember(comments, newest) {
             val pinned = compareByDescending<CommentsInfoItem> { it.isPinned }
@@ -578,7 +634,22 @@ class BilaiShell(private val activity: ComponentActivity) {
                     WatchPill("Newest", if (newest) p.onAccent else p.text, if (newest) p.accent else p.elevated) { newest = true }
                 }
             }
-            item { WatchPill("Add a comment…", p.text, p.elevated, click = ::accountAction) }
+            item {
+                if (!composeComment) WatchPill("Add a comment…", p.text, p.elevated) {
+                    if (signedIn) composeComment = true else accountAction()
+                } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicTextField(draft, { draft = it }, Modifier.fillMaxWidth().padding(8.dp),
+                        textStyle = TextStyle(color = p.text, fontSize = 14.sp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WatchPill("Cancel", p.text, p.elevated) { composeComment = false }
+                        WatchPill("Post", p.onAccent, p.accent, enabled = draft.isNotBlank()) {
+                            val id = engine.current.value?.id ?: return@WatchPill
+                            mutateAccount("comment:$id", YoutubeAccountActions.comment(id, draft.trim()),
+                                success = { draft = ""; composeComment = false; toast = "Comment posted" })
+                        }
+                    }
+                }
+            }
             items(sorted, key = { it.commentId }) { comment ->
                 val root = url to comment.commentId
                 CommentItem(comment, initial, replyTo = replyTo,
