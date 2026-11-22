@@ -41,6 +41,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import org.schabi.newpipe.extractor.comments.CommentsInfoItem
+import org.schabi.newpipe.extractor.localization.DateWrapper
+import java.time.OffsetDateTime
+import java.time.temporal.ChronoUnit
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -78,6 +87,21 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     val p = LocalBilaiColors.current
     val playback by engine.state.collectAsState()
     val info by engine.current.collectAsState()
+    var preview by remember(url) { mutableStateOf<CommentsInfoItem?>(null) }
+    var commentCount by remember(url) { mutableLongStateOf(-1L) }
+    DisposableEffect(url, info?.id) {
+        val request = if (BuildConfig.DEBUG && info?.id == "fixture0000") {
+            preview = WatchReviewFixture.comments.first()
+            commentCount = 2_900
+            null
+        } else if (info != null && url.startsWith("https://")) {
+            ExtractorHelper.getCommentsInfo(ServiceList.YouTube.serviceId, url, false)
+                .subscribeOn(io.reactivex.rxjava3.schedulers.Schedulers.io())
+                .observeOn(io.reactivex.rxjava3.android.schedulers.AndroidSchedulers.mainThread())
+                .subscribe({ page -> preview = page.relatedItems.firstOrNull() }, {})
+        } else null
+        onDispose { request?.dispose() }
+    }
     val related = remember(info) { info?.relatedItems.orEmpty().filterIsInstance<StreamInfoItem>() }
     val next = related.firstOrNull()
     var more by remember(url) { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
@@ -224,42 +248,96 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 item {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(Modifier.watchClick(detailsTouchable) { overlay("Description") }) {
+                Column(Modifier.watchClick(detailsTouchable) { overlay("Description") },
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     FeedText(info?.name ?: title, 17, p.text, FontWeight.Bold)
-                    FeedText("${info?.viewCount?.takeIf { it >= 0 } ?: "—"} views  •  …more", 12, p.muted)
+                    val meta = listOfNotNull(info?.viewCount?.takeIf { it >= 0 }?.let { "${watchCount(it)} views" },
+                        watchAge(info?.uploadDate)).joinToString(" • ")
+                    BasicText(buildAnnotatedString {
+                        withStyle(SpanStyle(color = p.muted)) { append(meta) }
+                        if (meta.isNotEmpty()) append(" ")
+                        withStyle(SpanStyle(color = p.text, fontWeight = FontWeight.SemiBold)) { append("…more") }
+                    }, style = TextStyle(fontSize = 12.sp, fontFamily = BilaiFont, lineHeight = 16.sp))
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                if (info != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.watchClick(detailsTouchable) { overlay("Channel") }) {
-                        FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
+                    Row(Modifier.weight(1f).watchClick(detailsTouchable) { overlay("Channel") },
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        NetImage(info?.uploaderAvatarUrl, Modifier.size(36.dp).clip(CircleShape), avatar = true)
+                        Column {
+                            FeedText(info?.uploaderName.orEmpty(), 14, p.text, FontWeight.SemiBold)
+                            val subscribers = info?.uploaderSubscriberCount ?: -1L
+                            if (subscribers >= 0) FeedText("${watchCount(subscribers)} subscribers", 11, p.muted)
+                        }
                     }
-                    if (info != null) WatchPill(if (subscribed) "Subscribed" else "Subscribe", p.onAccent, p.accent, enabled = detailsTouchable) {
-                        overlay("Subscribe")
+                    Box(Modifier.clip(CircleShape).background(if (subscribed) p.elevated else p.accent)
+                        .watchClick(detailsTouchable) { overlay("Subscribe") }.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        FeedText(if (subscribed) "Subscribed" else "Subscribe", 12,
+                            if (subscribed) p.text else p.onAccent, FontWeight.Bold)
                     }
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WatchPill("Like", if (liked) p.accent else p.text, p.elevated, enabled = detailsTouchable) { overlay("Like") }
-                    WatchPill("Dislike", if (disliked) p.accent else p.text, p.elevated, enabled = detailsTouchable) { overlay("Dislike") }
-                    WatchPill("Float", p.accent, p.accentSoft, enabled = detailsTouchable) { onCompact(true) }
-                    WatchPill("Share", p.text, p.elevated, enabled = detailsTouchable) { overlay("Share") }
-                    if (info != null) WatchPill("Download", p.text, p.elevated, enabled = detailsTouchable) {
-                        overlay("Download")
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.clip(CircleShape).background(p.elevated), verticalAlignment = Alignment.CenterVertically) {
+                        WatchAction(Glyph.THUMB_UP, watchCount(info?.likeCount ?: -1), "Like",
+                            if (liked) p.accent else p.text, detailsTouchable) { overlay("Like") }
+                        Spacer(Modifier.width(1.dp).height(16.dp).background(Color.White.copy(alpha = .15f)))
+                        WatchAction(Glyph.THUMB_DOWN, watchCount(info?.dislikeCount ?: -1), "Dislike",
+                            if (disliked) p.accent else p.muted, detailsTouchable, horizontal = 12) { overlay("Dislike") }
+                    }
+                    Box(Modifier.clip(CircleShape).background(p.elevated)) {
+                        WatchAction(Glyph.SHARE, "Share", "Share", p.text, detailsTouchable) { overlay("Share") }
+                    }
+                    if (info != null) Box(Modifier.clip(CircleShape).background(p.elevated)) {
+                        WatchAction(Glyph.DOWNLOAD, "Download", "Download", p.text, detailsTouchable) { overlay("Download") }
+                    }
+                    Box(Modifier.clip(CircleShape).background(p.accentSoft)) {
+                        WatchAction(Glyph.FLOAT, "Float", "Float", p.accent, detailsTouchable) { onCompact(true) }
                     }
                 }
-                Box(Modifier.fillMaxWidth().background(p.elevated, RoundedCornerShape(16.dp))
-                    .watchClick(detailsTouchable) { overlay("Comments") }.padding(12.dp)) {
-                    FeedText("Comments", 12, p.text, FontWeight.Bold)
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)
+                    .watchClick(detailsTouchable) { overlay("Comments") }.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FeedText("Comments", 12, p.text, FontWeight.Bold)
+                            if (commentCount >= 0) FeedText(watchCount(commentCount), 12, p.muted)
+                        }
+                        Icon(Glyph.CHEVRONS, p.muted, Modifier.size(14.dp))
+                    }
+                    preview?.let { comment ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            NetImage(comment.uploaderAvatarUrl, Modifier.size(24.dp).clip(CircleShape), avatar = true)
+                            BasicText(comment.commentText.content, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                style = TextStyle(color = p.text.copy(alpha = .9f), fontSize = 12.sp,
+                                    lineHeight = 16.sp, fontFamily = BilaiFont))
+                        }
+                    }
                 }
                 FeedText("UP NEXT", 12, p.muted, FontWeight.Bold)
                 }
                 }
-                items(recommendations, key = { it.url }) { item ->
+                items(recommendations, key = { it.url }, contentType = { "related-video" }) { item ->
                     Row(Modifier.fillMaxWidth().watchClick(detailsTouchable) { playNext(item.url, item.name) },
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        NetImage(item.thumbnailUrl, Modifier.width(144.dp).aspectRatio(16f / 9))
-                        Column {
-                            FeedText(item.name, 12, p.text, FontWeight.SemiBold)
+                        Box(Modifier.width(144.dp).aspectRatio(16f / 9).clip(RoundedCornerShape(12.dp))) {
+                            NetImage(item.thumbnailUrl, Modifier.fillMaxSize())
+                            if (item.duration > 0) Box(Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                                .background(Color.Black.copy(alpha = .8f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                BasicText(formatTime(item.duration), style = TextStyle(color = Color.White,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 10.sp))
+                            }
+                        }
+                        Column(Modifier.weight(1f).padding(vertical = 2.dp)) {
+                            BasicText(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = TextStyle(
+                                color = p.text, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold,
+                                fontFamily = BilaiFont))
+                            Spacer(Modifier.height(4.dp))
                             FeedText(item.uploaderName.orEmpty(), 11, p.muted)
+                            FeedText(listOfNotNull(item.viewCount.takeIf { it >= 0 }?.let { "${watchCount(it)} views" },
+                                watchAge(item.uploadDate)).joinToString(" • "), 10, p.muted)
                         }
                     }
                 }
@@ -555,3 +633,38 @@ internal fun WatchPill(label: String, color: Color, bg: Color, description: Stri
 
 private fun Modifier.watchClick(enabled: Boolean, action: () -> Unit) =
     if (enabled) clickable(onClick = action) else this
+
+
+private fun watchCount(count: Long): String {
+    if (count < 0) return ""
+    val (divisor, unit) = when {
+        count >= 1_000_000_000 -> 1_000_000_000 to "B"
+        count >= 1_000_000 -> 1_000_000 to "M"
+        count >= 1_000 -> 1_000 to "K"
+        else -> return count.toString()
+    }
+    return String.format(java.util.Locale.ROOT, "%.1f", count.toDouble() / divisor).removeSuffix(".0") + unit
+}
+
+private fun watchAge(date: DateWrapper?): String? {
+    val time = date?.offsetDateTime() ?: return null
+    val now = OffsetDateTime.now()
+    for ((unit, label) in listOf(ChronoUnit.YEARS to "year", ChronoUnit.MONTHS to "month",
+        ChronoUnit.WEEKS to "week", ChronoUnit.DAYS to "day", ChronoUnit.HOURS to "hour",
+        ChronoUnit.MINUTES to "minute")) {
+        val size = unit.between(time, now)
+        if (size > 0) return "$size $label${if (size == 1L) "" else "s"} ago"
+    }
+    return "Just now"
+}
+
+@Composable
+private fun WatchAction(glyph: Glyph, text: String, label: String, color: Color, enabled: Boolean,
+                        horizontal: Int = 14, click: () -> Unit) {
+    Row(Modifier.watchClick(enabled, click).semantics { contentDescription = label }
+        .padding(horizontal = horizontal.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(glyph, color, Modifier.size(14.dp))
+        if (text.isNotEmpty()) FeedText(text, 12, color, FontWeight.SemiBold)
+    }
+}

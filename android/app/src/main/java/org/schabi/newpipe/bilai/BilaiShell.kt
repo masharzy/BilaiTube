@@ -1007,7 +1007,13 @@ private fun BottomNav(active: Tab, select: (Tab) -> Unit) {
     }
 }
 
-private enum class Glyph(data: String) {
+internal enum class Glyph(data: String) {
+    THUMB_UP("M7 10v11 M14 5l-1 5h6a2 2 0 0 1 2 2l-2 7a2 2 0 0 1-2 2H7l-4-1v-9l4-1 5-7a2 2 0 0 1 2 2Z"),
+    THUMB_DOWN("M7 14V3 M14 19l-1-5h6a2 2 0 0 0 2-2l-2-7a2 2 0 0 0-2-2H7L3 4v9l4 1 5 7a2 2 0 0 0 2-2Z"),
+    SHARE("M8 11 16 6 M8 13l8 5 M9 12a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M22 5a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M22 19a3 3 0 1 1-6 0 3 3 0 1 1 6 0"),
+    DOWNLOAD("M12 3v12m-4-4 4 4 4-4 M4 16v4h16v-4"),
+    FLOAT("M4 14h6v6 M20 10h-6V4 M4 20l6-6 M20 4l-6 6"),
+    CHEVRONS("m8 9 4-4 4 4m-8 6 4 4 4-4"),
     SUN("M16 12a4 4 0 1 1-8 0 4 4 0 1 1 8 0 M12 2v2 M12 20v2 M4.93 4.93l1.42 1.42 M17.65 17.65l1.42 1.42 M2 12h2 M20 12h2 M4.93 19.07l1.42-1.42 M17.65 6.35l1.42-1.42"),
     MOON("M20.985 12.486A9 9 0 1 1 11.514 3.015a.5.5 0 0 1 .44.814 6.5 6.5 0 0 0 8.217 8.217.5.5 0 0 1 .814.44Z"),
     PALETTE("M12 22a10 10 0 1 1 10-10c0 1.4-1.2 2.5-2.6 2.5H17a1.5 1.5 0 0 0-1.2 2.4c.4.5.7 1.1.7 1.8C16.5 20.5 14.7 22 12 22Z M7.5 12h.1 M10 7h.1 M15 6.5h.1 M18 10h.1"),
@@ -1023,7 +1029,7 @@ private enum class Glyph(data: String) {
 }
 
 @Composable
-private fun Icon(glyph: Glyph, color: Color, modifier: Modifier) {
+internal fun Icon(glyph: Glyph, color: Color, modifier: Modifier) {
     Canvas(modifier) {
         scale(size.width / 24, size.height / 24, pivot = androidx.compose.ui.geometry.Offset.Zero) {
             drawPath(glyph.path, color, style = Stroke(2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
