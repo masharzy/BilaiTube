@@ -197,9 +197,7 @@ adb exec-out screencap -p > "$out/comments_open.png"
 tap_node "$out/comments_open.xml" '2 replies'
 dump_ui "$out/comments_replies_open.xml" 'coming along'
 adb exec-out screencap -p > "$out/comments_replies_open.png"
-tap_node "$out/comments_replies_open.xml" Reply
-dump_ui "$out/comments_reply_box.xml" 'Reply to'
-adb exec-out screencap -p > "$out/comments_reply_box.png"
+# Replies can't be posted to YouTube, so there is no reply box to capture.
 adb shell input keyevent BACK
 capture_page desc_open open_desc 'Filmed by BilaiTube Studio'
 adb shell 'input tap 190 340; input tap 190 340'
