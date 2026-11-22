@@ -95,6 +95,30 @@ capture_page library_playlists open_playlists Playlists
 capture_page library_downloads open_downloads 'Offline Downloads'
 capture_page app_settings open_app_settings Appearance
 capture_page account_sign_in open_account 'Choose account'
+# Evidence fixtures are debug-only; they do not log in or write real subscriptions.
+adb shell am force-stop "$pkg"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  --es bt.tab you --ez bt.account_fixture true
+sleep 1
+adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_account
+dump_ui "$out/account_sign_in_list.xml" "devforge@example.com"
+adb exec-out screencap -p > "$out/account_sign_in_list.png"
+adb shell am force-stop "$pkg"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  --es bt.tab you --ez bt.account_signed_fixture true --ez bt.you_fixture true
+dump_ui "$out/account_signed_in.xml" "devforge@example.com"
+adb exec-out screencap -p > "$out/account_signed_in.png"
+adb shell am force-stop "$pkg"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  --es bt.tab you --ez bt.you_fixture true
+dump_ui "$out/you_with_history.xml" "Mountain field notes"
+adb exec-out screencap -p > "$out/you_with_history.png"
+adb shell am force-stop "$pkg"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  --es bt.tab subs --ez bt.subs_fixture true
+dump_ui "$out/subs_two_channels.xml" "DevForge"
+adb exec-out screencap -p > "$out/subs_two_channels.png"
+
 capture 00_player_host true amber home
 adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
