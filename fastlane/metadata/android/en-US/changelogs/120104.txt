@@ -1,0 +1,8 @@
+- History, Watch Later, Liked videos and Subscriptions from your YouTube account
+- Shorts: like state, double-tap like, Download button
+- Floating mini player when you leave the app; no background playback after closing
+- Fresher Home refresh
+- Downloads: correct count, folders by category, deleted files disappear
+- Dislike counts on by default
+- Smoother tab and page animations
+- Redesigned "Open a YouTube link"

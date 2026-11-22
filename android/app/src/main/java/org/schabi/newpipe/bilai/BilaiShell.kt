@@ -392,6 +392,14 @@ class BilaiShell(private val activity: ComponentActivity) {
         if (BuildConfig.DEBUG) ContextCompat.registerReceiver(activity, debugReceiver,
             IntentFilter("com.masharzy.bilaitube.DEBUG_UI"), ContextCompat.RECEIVER_EXPORTED)
         autoplay = prefs.getBoolean("autoplay", true)
+        // Return YouTube Dislike is on by default in BilaiTube (the inherited default was off).
+        PreferenceManager.getDefaultSharedPreferences(activity).let { defaults ->
+            if (!defaults.getBoolean("bilai_ryd_default_applied", false)) {
+                defaults.edit().putBoolean(activity.getString(R.string.show_dislike_key), true)
+                    .putBoolean("bilai_ryd_default_applied", true).apply()
+                ServiceHelper.initServices(activity)
+            }
+        }
         handleIntent(activity.intent)
         loadAccountProfile()
     }
