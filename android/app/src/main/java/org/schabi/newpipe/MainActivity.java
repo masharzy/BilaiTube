@@ -819,14 +819,13 @@ public class MainActivity extends AppCompatActivity {
         final Fragment fragment = getSupportFragmentManager()
                 .findFragmentById(R.id.fragment_holder);
         if (fragment instanceof MainFragment) {
+            // BilaiTube home: logo + title on the left, no hamburger (everything is in Library)
             getSupportActionBar().setDisplayHomeAsUpEnabled(false);
-            if (toggle != null) {
-                toggle.syncState();
-                toolbarLayoutBinding.toolbar.setNavigationOnClickListener(v -> mainBinding.getRoot()
-                        .open());
-                mainBinding.getRoot().setDrawerLockMode(DrawerLayout.LOCK_MODE_UNDEFINED);
-            }
+            mainBinding.getRoot().setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+            toolbarLayoutBinding.toolbar.setNavigationIcon(null);
+            toolbarLayoutBinding.toolbar.setLogo(R.drawable.ic_bilai_logo);
         } else {
+            toolbarLayoutBinding.toolbar.setLogo(null);
             mainBinding.getRoot().setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
             toolbarLayoutBinding.toolbar.setNavigationOnClickListener(v -> onHomeButtonPressed());

@@ -144,6 +144,7 @@ class PlayerSheetLayout @JvmOverloads constructor(
     private val playDrawable: Drawable = tinted(R.drawable.ic_play_arrow)
     private val pauseDrawable: Drawable = tinted(R.drawable.ic_pause)
     private val closeDrawable: Drawable = tinted(R.drawable.ic_close)
+    private val drawClip = RectF()
     private val playRect = RectF()
     private val closeRect = RectF()
 
@@ -224,20 +225,21 @@ class PlayerSheetLayout @JvmOverloads constructor(
     }
 
     private fun safeBottom(): Float {
-        val parentView = parent as? ViewGroup
-        val nav = parentView?.findViewById<View>(R.id.main_bottom_nav)
-        if (nav != null && nav.visibility == View.VISIBLE && nav.height > 0) {
-            return nav.top.toFloat() - dp(MINI_MARGIN_DP)
+        val parentView = parent as? ViewGroup ?: return height - dp(MINI_MARGIN_DP)
+        val parentLoc = IntArray(2)
+        parentView.getLocationOnScreen(parentLoc)
+        val nav = parentView.findViewById<View>(R.id.main_bottom_nav)
+        if (nav != null && nav.isShown && nav.height > 0) {
+            val navLoc = IntArray(2)
+            nav.getLocationOnScreen(navLoc)
+            return (navLoc[1] - parentLoc[1]).toFloat() - dp(MINI_MARGIN_DP)
         }
         var bottom = height.toFloat()
         val insets = ViewCompat.getRootWindowInsets(this)
             ?.getInsets(WindowInsetsCompat.Type.systemBars())
         if (insets != null) {
-            val loc = IntArray(2)
-            getLocationOnScreen(loc)
-            val screenBottom = loc[1] + height
-            val rootBottom = rootView.height
-            val overlap = max(0, insets.bottom - (rootBottom - screenBottom))
+            val screenBottom = parentLoc[1] + parentView.height
+            val overlap = max(0, insets.bottom - (rootView.height - screenBottom))
             bottom -= overlap
         }
         return bottom - dp(MINI_MARGIN_DP)
@@ -676,7 +678,7 @@ class PlayerSheetLayout @JvmOverloads constructor(
         super.dispatchDraw(canvas)
         val fade = ((progress - 0.8f) / 0.2f).coerceIn(0f, 1f) * (1f - dismissFraction)
         if (fade <= 0f) return
-        val clip = RectF()
+        val clip = drawClip
         computeClip(clip)
         val sMini = miniScale()
         scrimPaint.alpha = (fade * 0.38f * 255f).toInt()
@@ -703,7 +705,22 @@ class PlayerSheetLayout @JvmOverloads constructor(
         closeDrawable.draw(canvas)
     }
 
+    private val layoutListener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+        if (currentState == STATE_COLLAPSED && !isAnimating && mode == Mode.NONE && width > 0) {
+            val (tx, ty) = cornerPoint(corner)
+            if (abs(tx - miniX) > 1f || abs(ty - miniY) > 1f) {
+                springMini(tx, ty, 0f, 0f)
+            }
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+    }
+
     override fun onDetachedFromWindow() {
+        viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
         cancelAnimations()
         tracker?.recycle()
         tracker = null
