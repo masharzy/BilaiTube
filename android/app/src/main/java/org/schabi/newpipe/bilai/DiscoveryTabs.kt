@@ -2,6 +2,7 @@ package org.schabi.newpipe.bilai
 
 import android.view.TextureView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -168,20 +169,42 @@ private fun ShortsAction(glyph: Glyph, label: String, count: String, action: () 
 }
 
 @Composable
-internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoItem) -> Unit) {
+internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoItem) -> Unit, fixture: Boolean = false) {
     val context = LocalContext.current
     val p = LocalBilaiColors.current
     var channels by remember { mutableStateOf<List<SubscriptionEntity>>(emptyList()) }
     var channel by remember { mutableStateOf<Long?>(null) }
     var rows by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
+    val shownChannels = if (fixture) remember {
+        listOf("DevForge Labs", "Frames of Bengal").mapIndexed { index, title ->
+            SubscriptionEntity().apply {
+                uid = (index + 1).toLong()
+                name = title
+                url = "https://www.youtube.com/channel/UC000000000000000000000" + index
+                avatarUrl = "bilai-review://avatar"
+                serviceId = 0
+            }
+        }
+    } else channels
     DisposableEffect(context) {
-        val subscription = SubscriptionManager(context).subscriptions().subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread()).subscribe({ channels = it }, {})
-        onDispose { subscription.dispose() }
+        if (fixture) onDispose { }
+        else {
+            val subscription = SubscriptionManager(context).subscriptions().subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread()).subscribe({ channels = it }, {})
+            onDispose { subscription.dispose() }
+        }
     }
-    LaunchedEffect(channels, channel) {
-        val current = channels.filter { channel == null || it.uid == channel }.take(20)
+    LaunchedEffect(shownChannels, channel, fixture) {
+        if (fixture) {
+            rows = WatchReviewFixture.stream("fixture").relatedItems
+                .filterIsInstance<StreamInfoItem>().filterIndexed { index, _ ->
+                    channel == null || index % 2L == channel!! - 1L
+                }.take(6)
+            loading = false
+            return@LaunchedEffect
+        }
+        val current = shownChannels.filter { channel == null || it.uid == channel }.take(20)
         rows = emptyList()
         loading = current.isNotEmpty()
         rows = withContext(Dispatchers.IO) {
@@ -214,11 +237,14 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
                         FeedText("All", 10, p.muted)
                     }
                 }
-                items(channels, key = { it.uid }) { item ->
+                items(shownChannels, key = { it.uid }) { item ->
                     Column(Modifier.width(54.dp).clickable { channel = item.uid }, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(48.dp).background(if (channel == item.uid) p.accent else p.elevated, CircleShape)
-                            .padding(2.dp)) {
+                        Box(Modifier.size(48.dp)
+                            .then(if (channel == item.uid) Modifier.border(2.dp, p.accent, CircleShape) else Modifier)
+                            .padding(3.dp)) {
                             NetImage(item.avatarUrl, Modifier.fillMaxSize().clip(CircleShape), avatar = true)
+                            Box(Modifier.align(Alignment.BottomEnd).size(12.dp)
+                                .border(2.dp, p.bg, CircleShape).background(p.accent, CircleShape))
                         }
                         FeedText(item.name.substringBefore(' '), 10, p.muted)
                     }
@@ -227,7 +253,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
         }
         if (rows.isEmpty()) item {
             Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), contentAlignment = Alignment.Center) {
-                FeedText(if (loading) "Loading subscriptions…" else if (channels.isEmpty())
+                FeedText(if (loading) "Loading subscriptions…" else if (shownChannels.isEmpty())
                     "Subscribe to channels to see their latest videos." else "Couldn't load subscriptions.", 12, p.muted)
             }
         }
@@ -236,7 +262,9 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
 }
 
 @Composable
-internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> Unit, show: (String) -> Unit,
+internal fun YouTab(dark: Boolean, red: Boolean, signedIn: Boolean, accountEmail: String?,
+                    toggleDark: () -> Unit, toggleAccent: () -> Unit,
+                    open: (String, String) -> Unit, show: (String) -> Unit,
                    skip: Boolean, toggleSkip: () -> Unit, hideShorts: Boolean, toggleHideShorts: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(context) { PreferenceManager.getDefaultSharedPreferences(context) }
@@ -257,11 +285,11 @@ internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(56.dp).background(p.accent, CircleShape), contentAlignment = Alignment.Center) {
-                    FeedText("BT", 18, p.onAccent, FontWeight.ExtraBold)
+                    FeedText(if (signedIn) accountEmail.orEmpty().take(2).uppercase() else "BT", 18, p.onAccent, FontWeight.ExtraBold)
                 }
                 Column(Modifier.weight(1f)) {
-                    FeedText(if (signedIn) "YouTube account" else "Guest Mode", 16, p.text, FontWeight.Bold)
-                    FeedText("100% Local SQLite • Zero Server", 12, p.muted)
+                    FeedText(if (signedIn) accountEmail ?: "YouTube account" else "Guest Mode", 16, p.text, FontWeight.Bold)
+                    FeedText(if (signedIn) "Synced via local SAPISID cookie" else "100% Local SQLite • Zero Server", 12, p.muted)
                 }
                 WatchPill(if (signedIn) "Manage" else "Sign in", p.text, p.elevated) { show(if (signedIn) "Settings" else "Sign in") }
             }
@@ -271,6 +299,26 @@ internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> 
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 FeedText("Settings", 14, p.text, FontWeight.Bold)
                 FeedText(if (dark) "☾" else "☀", 16, p.muted)
+            }
+        }
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    Row(Modifier.background(p.elevated, CircleShape).clickable(onClick = toggleDark)
+                        .padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (dark) Glyph.SUN else Glyph.MOON, p.text, Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        FeedText(if (dark) "Switch to Light" else "Switch to Dark", 12, p.text, FontWeight.SemiBold)
+                    }
+                }
+                item {
+                    Row(Modifier.background(p.accentSoft, CircleShape).clickable(onClick = toggleAccent)
+                        .padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Glyph.PALETTE, p.accent, Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        FeedText(if (red) "Classic Red" else "Warm Amber", 12, p.accent, FontWeight.SemiBold)
+                    }
+                }
             }
         }
         item {
@@ -289,9 +337,9 @@ internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> 
         }
         item {
             Column(Modifier.background(p.elevated, RoundedCornerShape(16.dp))) {
-                ProfileRow("Offline Downloads", "") { show("Offline Downloads") }
-                ProfileRow("Watch Later", "") { show("Watch Later") }
-                ProfileRow("Playlists", "") { show("Playlists") }
+                ProfileRow("Offline Downloads", "", Glyph.DOWNLOAD) { show("Offline Downloads") }
+                ProfileRow("Watch Later", "", Glyph.FLOAT) { show("Watch Later") }
+                ProfileRow("Playlists", "", Glyph.HOME) { show("Playlists") }
                 ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF", toggleSkip)
                 ProfileRow("Return YouTube Dislike", if (dislike) "ON" else "OFF") {
                     dislike = !dislike; prefs.edit().putBoolean(dislikeKey, dislike).apply()
@@ -303,11 +351,15 @@ internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> 
 }
 
 @Composable
-private fun ProfileRow(title: String, value: String, click: () -> Unit) {
+private fun ProfileRow(title: String, value: String, glyph: Glyph? = null, click: () -> Unit) {
     val p = LocalBilaiColors.current
     Row(Modifier.fillMaxWidth().clickable(onClick = click).padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween) {
-        FeedText(title, 12, p.text)
+        verticalAlignment = Alignment.CenterVertically) {
+        if (glyph != null) {
+            Icon(glyph, p.accent, Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+        }
+        Box(Modifier.weight(1f)) { FeedText(title, 12, p.text) }
         FeedText(value, 12, if (value == "ON") Color(0xff10b981) else p.muted, FontWeight.Bold)
     }
 }
