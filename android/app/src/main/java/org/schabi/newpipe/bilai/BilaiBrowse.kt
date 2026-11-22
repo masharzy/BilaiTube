@@ -101,13 +101,21 @@ internal fun SearchPage(close: () -> Unit, play: (String, String) -> Unit,
             else ExtractorHelper.getMoreSearchItems(service.serviceId, active, filters, emptyList(), page)
                 .map { it.items to it.nextPage }
         }.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ value ->
-            rows = ((if (page == null) emptyList() else rows) + value.first).distinctBy { it.url }
+            val incoming = when (filter) {
+                "Shorts" -> value.first.filterIsInstance<StreamInfoItem>().filter { it.isShortFormContent }
+                "Videos" -> value.first.filterIsInstance<StreamInfoItem>().filterNot { it.isShortFormContent }
+                "Channels" -> value.first.filterIsInstance<ChannelInfoItem>()
+                "Playlists" -> value.first.filterIsInstance<PlaylistInfoItem>()
+                else -> value.first
+            }
+            rows = ((if (page == null) emptyList() else rows) + incoming).distinctBy { it.url }
             continuation = value.second?.takeIf { it.url != page?.url || it.id != page?.id }
             loading = false
         }, { loading = false; failed = true }))
     }
     LaunchedEffect(submitted, filter, revision) {
         if (submitted.isNotEmpty()) {
+            request.set(null)
             rows = emptyList()
             continuation = null
             list.scrollToItem(0)

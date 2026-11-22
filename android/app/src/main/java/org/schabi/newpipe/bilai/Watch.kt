@@ -11,6 +11,8 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -32,6 +34,7 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.util.ExtractorHelper
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
@@ -42,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
@@ -50,6 +54,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -68,7 +73,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                    onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float, pictureInPicture: Boolean,
                    captionsOn: Boolean, toggleCaptions: () -> Unit,
                    autoplay: Boolean, toggleAutoplay: () -> Unit, close: () -> Unit, playNext: (String, String) -> Unit,
-                   overlay: (String) -> Unit) {
+                   autoplayNext: (String, String) -> Unit, overlay: (String) -> Unit) {
     val p = LocalBilaiColors.current
     val playback by engine.state.collectAsState()
     val info by engine.current.collectAsState()
@@ -83,14 +88,12 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
         (related + more).filter { it.url != url }.distinctBy { it.url }
     }
     var autoplayCancelled by remember(url) { mutableStateOf(false) }
-    var countdown by remember(url) { mutableIntStateOf(5) }
+    val countdown = remember(url) { Animatable(1f) }
     LaunchedEffect(url, playback.ended, autoplay, autoplayCancelled, next?.url) {
+        countdown.snapTo(1f)
         if (playback.ended && autoplay && !autoplayCancelled && next != null) {
-            for (seconds in 5 downTo 1) {
-                countdown = seconds
-                kotlinx.coroutines.delay(1000)
-            }
-            playNext(next.url, next.name)
+            countdown.animateTo(0f, tween(5000, easing = LinearEasing))
+            autoplayNext(next.url, next.name)
         }
     }
     val motion = remember { PlayerMotion() }
@@ -118,6 +121,8 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     }
     var spring by remember { mutableStateOf<Job?>(null) }
     var controls by remember { mutableStateOf(true) }
+    var scrub by remember(url) { mutableFloatStateOf(Float.NaN) }
+    val scrubbing = !scrub.isNaN()
     var tapJob by remember { mutableStateOf<Job?>(null) }
     var lastTap by remember(url) { mutableLongStateOf(0) }
     var seekSide by remember(url) { mutableIntStateOf(0) }
@@ -146,15 +151,20 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     val miniVisual by remember(fullscreen) { derivedStateOf { !fullscreen && motion.morph > .55f } }
     val detailsTouchable by remember { derivedStateOf { motion.morph < .2f } }
     fun settle() { spring?.cancel(); spring = scope.launch { motion.run() } }
-    LaunchedEffect(url, fullscreen) { motion.opened(); settle(); controls = true }
+    LaunchedEffect(url, fullscreen) {
+        motion.opened()
+        if (compact && !fullscreen) motion.minimize(2.5f)
+        settle()
+        controls = true
+    }
     LaunchedEffect(compact) {
         if (compact != motion.minimized) {
             if (compact) motion.minimize(2.5f) else motion.expand(-1.4f)
             settle()
         }
     }
-    LaunchedEffect(controls, playback.playing, miniVisual) {
-        if (controls && playback.playing && !miniVisual) {
+    LaunchedEffect(controls, playback.playing, miniVisual, scrubbing) {
+        if (controls && playback.playing && !miniVisual && !scrubbing) {
             kotlinx.coroutines.delay(3000)
             controls = false
         }
@@ -375,8 +385,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     }
                 }
                 Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    WatchPill(if (autoplay) "▶" else "Ⅱ", Color.White,
-                        if (autoplay) p.accent else Color.Black.copy(alpha = .55f), "Autoplay", click = toggleAutoplay)
+                    PlayerSwitch(autoplay, "Autoplay", toggleAutoplay)
                     if (playback.subtitles.isNotEmpty()) WatchPill("CC", Color.White,
                         if (captionsOn) p.accent else Color.Black.copy(alpha = .55f), "Captions", click = toggleCaptions)
                     WatchPill("⚙", Color.White, Color.Black.copy(alpha = .55f), "Player settings") { overlay("Player settings") }
@@ -390,28 +399,45 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = .8f))) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        BasicText("${formatTime(playback.positionMs / 1000)} / ${formatTime(playback.durationMs / 1000)}",
+                        val displayedPosition = if (scrubbing) (scrub * playback.durationMs).toLong() else playback.positionMs
+                        BasicText("${formatTime(displayedPosition / 1000)} / ${formatTime(playback.durationMs / 1000)}",
                             style = TextStyle(color = Color.White, fontSize = 10.sp))
                         WatchPill(formatSpeed(speed), Color.White, Color.Transparent) { overlay("Player settings") }
                         WatchPill("⛶", Color.White, Color.Transparent,
                             if (fullscreen) "Exit fullscreen" else "Fullscreen") { onFullscreen(!fullscreen) }
                     }
-                    Box(Modifier.fillMaxWidth().height(24.dp).pointerInput(playback.durationMs) {
+                    Canvas(Modifier.fillMaxWidth().height(20.dp).pointerInput(url, playback.durationMs) {
                         awaitEachGesture {
-                            var point = awaitFirstDown()
-                            val id = point.id
-                            do {
-                                point = awaitPointerEvent().changes.firstOrNull { it.id == id } ?: break
-                                point.consume()
-                            } while (point.pressed)
-                            if (playback.durationMs > 0) engine.seekTo((point.position.x / size.width *
-                                playback.durationMs).toLong().coerceIn(0L, playback.durationMs))
+                            val down = awaitFirstDown()
+                            if (playback.durationMs <= 0 || size.width == 0) return@awaitEachGesture
+                            down.consume()
+                            scrub = (down.position.x / size.width).coerceIn(0f, 1f)
+                            try {
+                                while (true) {
+                                    val point = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                    if (point.isConsumed) break
+                                    scrub = (point.position.x / size.width).coerceIn(0f, 1f)
+                                    point.consume()
+                                    if (!point.pressed) {
+                                        engine.seekTo((scrub * playback.durationMs).toLong())
+                                        break
+                                    }
+                                }
+                            } finally {
+                                scrub = Float.NaN
+                            }
                         }
-                    }, contentAlignment = Alignment.BottomStart) {
-                        Box(Modifier.fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = .25f)))
-                        val played = if (playback.durationMs == 0L) 0f else
-                            (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
-                        Box(Modifier.fillMaxWidth(played).height(4.dp).background(p.accent))
+                    }) {
+                        val fraction = if (!scrub.isNaN()) scrub else if (playback.durationMs <= 0) 0f
+                            else (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
+                        val start = Offset(0f, center.y)
+                        val end = Offset(size.width, center.y)
+                        val thumb = Offset(size.width * fraction, center.y)
+                        drawLine(Color.White.copy(alpha = .25f), start, end, 4.dp.toPx())
+                        drawLine(Color.White.copy(alpha = .45f), start,
+                            Offset(size.width * playback.bufferedPercent.coerceIn(0, 100) / 100f, center.y), 4.dp.toPx())
+                        drawLine(p.accent, start, thumb, 4.dp.toPx())
+                        drawCircle(p.accent, 6.dp.toPx(), thumb)
                     }
                 }
             } else if (miniVisual) {
@@ -430,7 +456,15 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .85f)),
                     verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     if (autoplay && next != null && !autoplayCancelled) {
-                        FeedText("Up next · $countdown", 14, Color.White, FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Canvas(Modifier.size(22.dp)) {
+                                drawCircle(Color.White.copy(alpha = .25f), style = Stroke(2.dp.toPx()))
+                                drawArc(p.accent, -90f, countdown.value * 360f, false, style = Stroke(2.dp.toPx()))
+                            }
+                            FeedText("Up next", 14, Color.White, FontWeight.Bold)
+                        }
+                        NetImage(next.thumbnailUrl, Modifier.width(96.dp).aspectRatio(16f / 9))
                         FeedText(next.name, 14, Color.White)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             WatchPill("Cancel", p.text, p.elevated) { autoplayCancelled = true }
@@ -443,6 +477,24 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 SeekFeedback(seekSide, seekCount, seekFlash, seekPoint)
             }
 
+        }
+    }
+}
+
+@Composable
+internal fun PlayerSwitch(checked: Boolean, label: String, onToggle: () -> Unit) {
+    val p = LocalBilaiColors.current
+    val offset by animateFloatAsState(
+        targetValue = if (checked) 16f else 0f,
+        animationSpec = tween(260, easing = CubicBezierEasing(.34f, 1.56f, .64f, 1f)),
+        label = "player switch",
+    )
+    Box(Modifier.size(36.dp, 20.dp).background(if (checked) p.accent else p.elevated, CircleShape)
+        .toggleable(checked, role = Role.Switch, onValueChange = { onToggle() })
+        .semantics { contentDescription = label }.padding(2.dp)) {
+        Box(Modifier.offset(x = offset.dp).size(16.dp).background(Color.White, CircleShape),
+            contentAlignment = Alignment.Center) {
+            FeedText(if (checked) "▶" else "Ⅱ", 8, Color.Black, FontWeight.Bold)
         }
     }
 }

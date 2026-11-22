@@ -19,13 +19,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModelProvider
+import androidx.preference.PreferenceManager
+import org.schabi.newpipe.R
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.bilai.engine.ServicePlaybackEngine
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -101,8 +108,16 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var preferredCaption: String? = null
     private var quality by mutableStateOf<Int?>(null)
     private var loopVideo by mutableStateOf(false)
+    private val enginePreferences = PreferenceManager.getDefaultSharedPreferences(activity)
+    private val sponsorBlockPreference = activity.getString(R.string.sponsor_block_skipping_enabled_key)
+    private var sponsorBlock by mutableStateOf(enginePreferences.getBoolean(sponsorBlockPreference, true))
     private var autoplay by mutableStateOf(true)
     private var settingsPage by mutableStateOf("Player settings")
+
+    private fun toggleSponsorBlock() {
+        sponsorBlock = !sponsorBlock
+        enginePreferences.edit().putBoolean(sponsorBlockPreference, sponsorBlock).apply()
+    }
 
     private fun toggleAutoplay() {
         autoplay = !autoplay
@@ -141,6 +156,11 @@ class BilaiShell(private val activity: ComponentActivity) {
         }
     }
 
+    private fun accountAction() {
+        if (signedIn) toast = "This action is unavailable"
+        else overlay = "Sign in to continue"
+    }
+
     private fun refreshAccount() {
         signedIn = BilaiAccountStore.load(activity) != null
         App.reconcileYoutubePlayerClient(activity)
@@ -172,6 +192,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var overlay by mutableStateOf<String?>(null)
     private var scrollHome by mutableIntStateOf(0)
     private var browseTarget by mutableStateOf<Pair<String, String>?>(null)
+    private val localReplies = mutableStateMapOf<Pair<String, String>, List<String>>()
     private var menuVideo by mutableStateOf<StreamInfoItem?>(null)
     private val debugReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -344,9 +365,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     initialShortUrl = url
                                     select(Tab.SHORTS)
                                 }, ::openVideoMenu)
-                                Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, { overlay = "Sign in to continue" }, ::share)
+                                Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, ::accountAction, ::share)
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu)
-                                Tab.YOU -> YouTab(dark, signedIn, ::play, { overlay = it }, hideShorts) {
+                                Tab.YOU -> YouTab(dark, signedIn, ::play, { overlay = it }, sponsorBlock, ::toggleSponsorBlock, hideShorts) {
                                     hideShorts = !hideShorts
                                     prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
                                 }
@@ -358,13 +379,19 @@ class BilaiShell(private val activity: ComponentActivity) {
                         Watch(url, title, engine, compact, { compact = it }, videoOnly, ::requestFullscreen, playbackSpeed, pip,
                             captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
                             close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
-                            playNext = ::play, overlay = { name ->
+                            playNext = ::play,
+                            autoplayNext = { nextUrl, nextTitle ->
+                                val wasCompact = compact
+                                play(nextUrl, nextTitle)
+                                compact = wasCompact
+                            }, overlay = { name ->
                                 when (name) {
                                     "Channel" -> engine.current.value?.let { info ->
                                         info.uploaderUrl?.takeIf { it.isNotBlank() }?.let {
                                             openChannel(it, info.uploaderName.orEmpty())
                                         }
                                     }
+                                    "Sign in to continue" -> accountAction()
                                     "Share" -> share(url)
                                     "Download" -> toast = if (engine.download()) "Download started" else "Download unavailable"
                                     else -> overlay = name
@@ -387,6 +414,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
                                         if (signedIn) {
                                             BilaiAccountStore.clear(activity)
+                                            localReplies.clear()
                                             LoginSessions.onLogout(activity,
                                                 LoginSessions.youtube(activity))
                                             refreshAccount()
@@ -398,9 +426,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                             SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist)
                         } else if (name == "Channel") {
                             browseTarget?.let { (url, title) ->
-                                ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist) {
-                                    overlay = "Sign in to continue"
-                                }
+                                ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist, ::accountAction)
                             }
                         } else if (name == "Remote playlist") {
                             browseTarget?.let { (url, title) ->
@@ -517,6 +543,15 @@ class BilaiShell(private val activity: ComponentActivity) {
                 }, { loading = false; failed = true }))
             onDispose { request.dispose() }
         }
+        var replyTo by remember(url) { mutableStateOf<String?>(null) }
+        var newest by remember(url) { mutableStateOf(false) }
+        val sorted = remember(comments, newest) {
+            val pinned = compareByDescending<CommentsInfoItem> { it.isPinned }
+            comments.distinctBy { it.commentId }.sortedWith(
+                if (newest) pinned.thenByDescending { it.uploadDate?.offsetDateTime() }
+                else pinned.thenByDescending { it.likeCount },
+            )
+        }
         val commentList = rememberLazyListState()
         val initial = info
         val continuation = next
@@ -534,9 +569,22 @@ class BilaiShell(private val activity: ComponentActivity) {
             }
         }
         LazyColumn(state = commentList, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { WatchPill("Add a comment…", p.text, p.elevated) { overlay = "Sign in to continue" } }
-            items(comments.distinctBy { it.commentId }, key = { it.commentId }) { comment ->
-                CommentItem(comment, initial)
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WatchPill("Top", if (newest) p.text else p.onAccent, if (newest) p.elevated else p.accent) { newest = false }
+                    WatchPill("Newest", if (newest) p.onAccent else p.text, if (newest) p.accent else p.elevated) { newest = true }
+                }
+            }
+            item { WatchPill("Add a comment…", p.text, p.elevated, click = ::accountAction) }
+            items(sorted, key = { it.commentId }) { comment ->
+                val root = url to comment.commentId
+                CommentItem(comment, initial, replyTo = replyTo,
+                    onReply = { target -> if (signedIn) replyTo = target else overlay = "Sign in to continue" },
+                    local = localReplies[root].orEmpty(),
+                    submit = { text ->
+                        localReplies[root] = localReplies[root].orEmpty() + text
+                        replyTo = null
+                    })
             }
             if (loading) {
                 items(2) { Box(Modifier.fillMaxWidth().height(58.dp).background(p.elevated, RoundedCornerShape(12.dp))) }
@@ -546,9 +594,12 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     @Composable
-    private fun CommentItem(comment: CommentsInfoItem, info: CommentsInfo?, nested: Boolean = false) {
+    private fun CommentItem(comment: CommentsInfoItem, info: CommentsInfo?, nested: Boolean = false,
+                            replyTo: String?, onReply: (String?) -> Unit, local: List<String> = emptyList(),
+                            submit: (String) -> Unit) {
         val p = LocalBilaiColors.current
         var expanded by remember(comment.commentId) { mutableStateOf(false) }
+        LaunchedEffect(local.size) { if (local.isNotEmpty()) expanded = true }
         var fullText by remember(comment.commentId) { mutableStateOf(false) }
         var replies by remember(comment.commentId) { mutableStateOf<List<CommentsInfoItem>>(emptyList()) }
         var next by remember(comment.commentId) { mutableStateOf(comment.replies) }
@@ -581,26 +632,80 @@ class BilaiShell(private val activity: ComponentActivity) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     WatchPill("Like · ${comment.likeCount.coerceAtLeast(0)}", p.text, p.elevated) {
-                        overlay = "Sign in to continue"
+                        accountAction()
                     }
-                    WatchPill("Dislike", p.text, p.elevated) { overlay = "Sign in to continue" }
-                    WatchPill("Reply", p.text, p.elevated) { overlay = "Sign in to continue" }
+                    WatchPill("Dislike", p.text, p.elevated, click = ::accountAction)
+                    WatchPill("Reply", p.text, p.elevated) { onReply(comment.commentId) }
                     if (comment.isHeartedByUploader) FeedText("♥", 12, Color.Red)
                 }
-                if (!nested && comment.replyCount > 0) {
-                    WatchPill("${comment.replyCount} replies", p.accent, p.accentSoft) {
+                LocalReplyComposer(replyTo != null && replyTo == comment.commentId, comment.uploaderName.orEmpty(), nested,
+                    cancel = { onReply(null) }, submit = submit)
+                val count = comment.replyCount.coerceAtLeast(0) + local.size
+                if (!nested && count > 0) {
+                    WatchPill("$count replies", p.accent, p.accentSoft) {
                         expanded = !expanded
                         if (expanded && replies.isEmpty()) loadReplies()
                     }
-                    AnimatedVisibility(expanded) {
+                    AnimatedVisibility(expanded, enter = expandVertically(tween(320)), exit = shrinkVertically(tween(320))) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            replies.forEach { reply -> CommentItem(reply, info, nested = true) }
+                            replies.forEach { reply ->
+                                key(reply.commentId) {
+                                    CommentItem(reply, info, nested = true, replyTo = replyTo, onReply = onReply, submit = submit)
+                                }
+                            }
+                            local.forEach { text ->
+                                Column(Modifier.padding(start = 24.dp)) {
+                                    FeedText("Local", 11, p.muted)
+                                    FeedText(text, 13, p.text)
+                                }
+                            }
                             if (loading) FeedText("Loading replies…", 12, p.muted)
                             else if (Page.isValid(next) && replies.isNotEmpty()) {
                                 WatchPill("More replies", p.accent, p.accentSoft, click = ::loadReplies)
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    @Composable
+    private fun LocalReplyComposer(visible: Boolean, author: String, nested: Boolean,
+                                   cancel: () -> Unit, submit: (String) -> Unit) {
+        val p = LocalBilaiColors.current
+        val handle = "@" + author.trimStart('@')
+        var draft by remember(visible, author) { mutableStateOf(if (nested) "$handle " else "") }
+        val viewport = remember { BringIntoViewRequester() }
+        LaunchedEffect(visible) {
+            if (visible) {
+                delay(300)
+                viewport.bringIntoView()
+            }
+        }
+        AnimatedVisibility(visible, enter = expandVertically(tween(300)), exit = shrinkVertically(tween(300))) {
+            Column(Modifier.fillMaxWidth().bringIntoViewRequester(viewport),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(24.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                        FeedText("BT", 9, p.accent, FontWeight.Bold)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        BasicTextField(draft, { draft = it }, Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(color = p.text, fontSize = 13.sp),
+                            decorationBox = { field -> Box {
+                                if (draft.isEmpty()) FeedText("Reply to $handle…", 13, p.muted)
+                                field()
+                            } })
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(p.muted))
+                    }
+                }
+                val enabled = draft.isNotBlank() && (!nested || draft.trim() != handle)
+                Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    WatchPill("Cancel", p.text, p.elevated, click = cancel)
+                    WatchPill("Reply", if (enabled) p.onAccent else p.muted,
+                        if (enabled) p.accent else p.elevated, enabled = enabled) { submit(draft.trim()) }
                 }
             }
         }
@@ -659,7 +764,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                         }
                     }
                     else -> {
-                        MenuRow("Autoplay", if (autoplay) "On" else "Off", ::toggleAutoplay)
+                        Row(Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            FeedText("Autoplay", 14, p.text)
+                            PlayerSwitch(autoplay, "Autoplay", ::toggleAutoplay)
+                        }
                         MenuRow("Captions", captions ?: "Off") { settingsPage = "Captions" }
                         MenuRow("Quality", quality?.let { "${it}p" } ?: "Auto") { settingsPage = "Quality" }
                         MenuRow("Playback speed", formatSpeed(playbackSpeed)) { settingsPage = "Playback speed" }
@@ -668,8 +777,18 @@ class BilaiShell(private val activity: ComponentActivity) {
                             dismiss()
                             activity.moveTaskToBack(true)
                         }
-                        MenuRow("Loop video", if (loopVideo) "On" else "Off") {
-                            loopVideo = !loopVideo; engine.setLoop(loopVideo)
+                        Row(Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            FeedText("SponsorBlock", 14, p.text)
+                            PlayerSwitch(sponsorBlock, "SponsorBlock", ::toggleSponsorBlock)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            FeedText("Loop video", 14, p.text)
+                            PlayerSwitch(loopVideo, "Loop video") {
+                                loopVideo = !loopVideo
+                                engine.setLoop(loopVideo)
+                            }
                         }
                     }
                 }

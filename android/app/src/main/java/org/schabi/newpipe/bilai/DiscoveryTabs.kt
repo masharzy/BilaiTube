@@ -175,12 +175,10 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
 
 @Composable
 internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> Unit, show: (String) -> Unit,
-                   hideShorts: Boolean, toggleHideShorts: () -> Unit) {
+                   skip: Boolean, toggleSkip: () -> Unit, hideShorts: Boolean, toggleHideShorts: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(context) { PreferenceManager.getDefaultSharedPreferences(context) }
-    val skipKey = context.getString(R.string.sponsor_block_skipping_enabled_key)
     val dislikeKey = context.getString(R.string.show_dislike_key)
-    var skip by remember { mutableStateOf(prefs.getBoolean(skipKey, true)) }
     var dislike by remember { mutableStateOf(prefs.getBoolean(dislikeKey, false)) }
     var recent by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     val p = LocalBilaiColors.current
@@ -232,9 +230,7 @@ internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> 
                 ProfileRow("Offline Downloads", "") { show("Offline Downloads") }
                 ProfileRow("Watch Later", "") { show("Watch Later") }
                 ProfileRow("Playlists", "") { show("Playlists") }
-                ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF") {
-                    skip = !skip; prefs.edit().putBoolean(skipKey, skip).apply()
-                }
+                ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF", toggleSkip)
                 ProfileRow("Return YouTube Dislike", if (dislike) "ON" else "OFF") {
                     dislike = !dislike; prefs.edit().putBoolean(dislikeKey, dislike).apply()
                 }
