@@ -1,7 +1,0 @@
-<resources>
-    <!-- IDs still referenced by dormant upstream player UI. -->
-    <item type="id" name="drawer_layout" />
-    <item type="id" name="fragment_holder" />
-    <item type="id" name="fragment_player_holder" />
-    <item type="id" name="player_sheet" />
-</resources>
