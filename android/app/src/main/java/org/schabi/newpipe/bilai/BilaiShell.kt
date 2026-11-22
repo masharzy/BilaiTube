@@ -207,6 +207,18 @@ class BilaiShell(private val activity: ComponentActivity) {
         else overlay = "Sign in to continue"
     }
 
+    private fun signOut() {
+        BilaiAccountStore.clear(activity)
+        prefs.edit().remove("account_email").apply()
+        localReplies.clear()
+        accountRequests.clear()
+        pendingAccountActions.clear()
+        reactions.clear()
+        subscriptions.clear()
+        LoginSessions.onLogout(activity, LoginSessions.youtube(activity))
+        refreshAccount()
+    }
+
     private fun refreshAccount() {
         signedIn = BilaiAccountStore.load(activity) != null
         accountEmail = activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).getString("account_email", null)
@@ -469,7 +481,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 Tab.YOU -> YouTab(dark, red, BuildConfig.DEBUG && fixtureYou,
                                     signedIn || (BuildConfig.DEBUG && fixtureSignedIn),
                                     if (BuildConfig.DEBUG && fixtureSignedIn) "devforge@example.com" else accountEmail,
-                                    ::changeDark, ::changeAccent, ::play, { overlay = it },
+                                    ::changeDark, ::changeAccent, ::signOut, ::play, { overlay = it },
                                     sponsorBlock, ::toggleSponsorBlock, hideShorts) {
                                     hideShorts = !hideShorts
                                     prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
@@ -522,17 +534,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                         prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
                                     }
                                     WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
-                                        if (signedIn) {
-                                            BilaiAccountStore.clear(activity)
-                                            prefs.edit().remove("account_email").apply()
-                                            localReplies.clear()
-                                            accountRequests.clear()
-                                            pendingAccountActions.clear()
-                                            reactions.clear()
-                                            subscriptions.clear()
-                                            LoginSessions.onLogout(activity,
-                                                LoginSessions.youtube(activity))
-                                            refreshAccount()
+                                        if (signedIn) signOut()
                                         } else overlay = "Sign in"
                                     }
                                 }
@@ -1062,6 +1064,7 @@ internal enum class Glyph(data: String) {
     MOON("M20.985 12.486A9 9 0 1 1 11.514 3.015a.5.5 0 0 1 .44.814 6.5 6.5 0 0 0 8.217 8.217.5.5 0 0 1 .814.44Z"),
     PALETTE("M12 22a10 10 0 1 1 10-10c0 1.4-1.2 2.5-2.6 2.5H17a1.5 1.5 0 0 0-1.2 2.4c.4.5.7 1.1.7 1.8C16.5 20.5 14.7 22 12 22Z M7.5 12h.1 M10 7h.1 M15 6.5h.1 M18 10h.1"),
     SETTINGS("M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8 M19.4 15a1.6 1.6 0 0 0 .32 1.76l.06.06-1.9 1.9-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-1.02 1.47V20h-2.7v-.09A1.6 1.6 0 0 0 11.32 18.5a1.6 1.6 0 0 0-1.76.32l-.06.06-1.9-1.9.06-.06A1.6 1.6 0 0 0 8 15.16a1.6 1.6 0 0 0-1.47-1.02H6v-2.7h.09A1.6 1.6 0 0 0 7.5 10.42a1.6 1.6 0 0 0-.32-1.76l-.06-.06 1.9-1.9.06.06a1.6 1.6 0 0 0 1.76.32A1.6 1.6 0 0 0 11.86 5.6V5h2.7v.09A1.6 1.6 0 0 0 15.58 6.5a1.6 1.6 0 0 0 1.76-.32l.06-.06 1.9 1.9-.06.06a1.6 1.6 0 0 0-.32 1.76A1.6 1.6 0 0 0 20.4 10.86H21v2.7h-.09A1.6 1.6 0 0 0 19.4 15Z"),
+    CLOCK("M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20 M12 6v6l4 2"),
     LINK("M9 17H7a5 5 0 0 1 0-10h2 M15 7h2a5 5 0 0 1 0 10h-2 M8 12h8"),
     BELL("M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21a2 2 0 0 0 4 0"),
     SEARCH("M19 11a8 8 0 1 1-16 0 8 8 0 1 1 16 0 M21 21l-4.35-4.35"),
