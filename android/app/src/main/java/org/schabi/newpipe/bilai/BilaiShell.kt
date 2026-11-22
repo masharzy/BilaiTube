@@ -534,8 +534,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                         prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
                                     }
                                     WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
-                                        if (signedIn) signOut()
-                                        } else overlay = "Sign in"
+                                        if (signedIn) signOut() else overlay = "Sign in"
                                     }
                                 }
                             }
