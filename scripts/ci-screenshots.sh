@@ -12,13 +12,27 @@ adb shell wm size 1170x2532
 adb shell wm density 480
 adb shell settings put system font_scale 1.0
 
+dump_ui() {
+  local dst=$1 tag=$2 remote=/sdcard/bilai-ui.xml
+  for attempt in {1..8}; do
+    adb shell rm -f "$remote"
+    if adb shell uiautomator dump "$remote" &&
+        adb pull "$remote" "$dst" && grep -q "$tag" "$dst"; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Could not capture Compose node: $tag" >&2
+  return 1
+}
+
 capture() {
   local name=$1 dark=$2 accent=$3 tab=$4
   adb shell am force-stop "$pkg"
   adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
     --ez bt.dark "$dark" --es bt.accent "$accent" --es bt.tab "$tab" | tee "$out/$name.launch.txt"
-  adb shell uiautomator dump /sdcard/bilai-ui.xml
-  adb pull /sdcard/bilai-ui.xml "$out/$name.xml"
+  sleep 2
+  dump_ui "$out/$name.xml" "tab_$tab"
   python3 - "$out/$name.xml" "$tab" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
@@ -45,9 +59,7 @@ adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
   -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri "file:///data/data/$pkg/sample.mp4"
 sleep 3
-adb shell uiautomator dump /sdcard/bilai-watch.xml
-adb pull /sdcard/bilai-watch.xml "$out/08_watch_expanded.xml"
-grep -q 'player_surface' "$out/08_watch_expanded.xml"
+dump_ui "$out/08_watch_expanded.xml" player_surface
 if grep -q "Couldn't play" "$out/08_watch_expanded.xml"; then exit 1; fi
 adb exec-out screencap -p > "$out/08_watch_expanded.png"
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_desc
@@ -61,9 +73,7 @@ adb exec-out screencap -p > "$out/09_watch_mid_drag.png"
 wait "$swipe_job"
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action minimize
 sleep 1
-adb shell uiautomator dump /sdcard/bilai-mini.xml
-adb pull /sdcard/bilai-mini.xml "$out/10_mini_br.xml"
-grep -q 'player_close' "$out/10_mini_br.xml"
+dump_ui "$out/10_mini_br.xml" player_close
 adb exec-out screencap -p > "$out/10_mini_br.png"
 adb shell input swipe 900 2100 260 300 1800
 sleep 1

@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -45,6 +48,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     val motion = remember { PlayerMotion() }
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
+    val pointerCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
     var spring by remember { mutableStateOf<Job?>(null) }
     var controls by remember { mutableStateOf(true) }
     var speed by remember { mutableIntStateOf(0) }
@@ -121,25 +125,33 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
         }.background(Color.Black).then(if (BuildConfig.DEBUG) Modifier.testTag("player_surface") else Modifier)) {
             AndroidView(factory = { context -> TextureView(context).also(engine::attachSurface) },
                 modifier = Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().pointerInput(url, density) {
+            Box(Modifier.fillMaxSize().onGloballyPositioned { pointerCoordinates[0] = it }
+                .pointerInput(url, density) {
+                fun toRoot(position: Offset): Offset {
+                    val coordinates = pointerCoordinates[0]
+                    return if (coordinates?.isAttached == true) coordinates.localToRoot(position) else position
+                }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     motion.down()
                     val tracker = VelocityTracker()
-                    tracker.addPosition(down.uptimeMillis, down.position)
+                    val origin = toRoot(down.position)
+                    tracker.addPosition(down.uptimeMillis, origin)
+                    var point = origin
                     var last = down
                     do {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         last = change
-                        tracker.addPosition(change.uptimeMillis, change.position)
-                        val delta = change.position - down.position
+                        point = toRoot(change.position)
+                        tracker.addPosition(change.uptimeMillis, point)
+                        val delta = point - origin
                         if (change.pressed && delta.getDistance() >= 8 * density) {
                             motion.move(delta.x / density, delta.y / density)
                             change.consume()
                         }
                     } while (last.pressed)
-                    val delta = (last.position - down.position) / density
+                    val delta = (point - origin) / density
                     val v = tracker.calculateVelocity()
                     if (motion.release(delta.x, delta.y, v.x / density, v.y / density)) close()
                     else {
