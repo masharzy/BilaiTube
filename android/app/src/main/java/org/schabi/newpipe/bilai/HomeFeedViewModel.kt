@@ -216,7 +216,17 @@ class HomeFeedViewModel : ViewModel() {
                     .let { FeedPage(it.items, it.continuation) }
             is Source.Query -> {
                 val service = ServiceList.YouTube
-                val info = SearchInfo.getInfo(service, service.searchQHFactory.fromQuery(source.query))
+                val factory = service.searchQHFactory
+                // The YouTube search URL builder requires exactly one content filter; use "videos".
+                val videos = (0..60).asSequence()
+                    .mapNotNull { id -> runCatching { factory.getFilterItem(id) }.getOrNull() }
+                    .firstOrNull { it.name == "videos" }
+                val handler = if (videos != null) {
+                    factory.fromQuery(source.query, listOf(videos), null)
+                } else {
+                    factory.fromQuery(source.query)
+                }
+                val info = SearchInfo.getInfo(service, handler)
                 FeedPage(info.relatedItems.filterIsInstance<StreamInfoItem>(), null)
             }
             is Source.Trending -> {
