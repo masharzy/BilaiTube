@@ -79,7 +79,9 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
     var extra by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
-    var queryIndex by remember { mutableIntStateOf(0) }
+    // A different starting point on every visit, like YouTube's Shorts feed.
+    val seed = remember { kotlin.random.Random.nextInt() }
+    var queryIndex by remember { mutableIntStateOf(kotlin.random.Random(seed).nextInt(SHORTS_QUERIES.size)) }
     var nextPage by remember { mutableStateOf<org.schabi.newpipe.extractor.Page?>(null) }
     var loadingMore by remember { mutableStateOf(false) }
     suspend fun loadMore() {
@@ -104,7 +106,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
             }
             if (result != null) {
                 val items = result.first.filterIsInstance<StreamInfoItem>()
-                extra = (extra + items).distinctBy { youtubeId(it.url) ?: it.url }
+                extra = (extra + items.shuffled(kotlin.random.Random(seed + extra.size))).distinctBy { youtubeId(it.url) ?: it.url }
                 nextPage = result.second
                 if (!org.schabi.newpipe.extractor.Page.isValid(result.second)) { queryIndex++; nextPage = null }
             } else {
@@ -123,7 +125,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
         failed = extra.isEmpty() && home.shortItems.isEmpty()
     }
     val clips = remember(fixture, home.shortItems, extra) {
-        fixture ?: (home.shortItems + extra).distinctBy { youtubeId(it.url) ?: it.url }
+        fixture ?: (home.shortItems.shuffled(kotlin.random.Random(seed)) + extra).distinctBy { youtubeId(it.url) ?: it.url }
     }
     val initialPage = clips.indexOfFirst { youtubeId(it.url) == youtubeId(initialUrl) }.coerceAtLeast(0)
     val pager = rememberPagerState(initialPage = initialPage) { clips.size }
@@ -506,7 +508,8 @@ private fun SubsSkeleton() {
 internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signedIn: Boolean, accountEmail: String?,
                     toggleDark: () -> Unit, toggleAccent: () -> Unit, signOut: () -> Unit,
                     open: (String, String) -> Unit, show: (String) -> Unit,
-                   skip: Boolean, toggleSkip: () -> Unit, hideShorts: Boolean, toggleHideShorts: () -> Unit) {
+                   skip: Boolean, toggleSkip: () -> Unit, hideShorts: Boolean, accountPhoto: String? = null,
+                    accountHandle: String? = null, toggleHideShorts: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(context) { PreferenceManager.getDefaultSharedPreferences(context) }
     val dislikeKey = context.getString(R.string.show_dislike_key)
@@ -559,20 +562,17 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(56.dp).background(p.accent, CircleShape), contentAlignment = Alignment.Center) {
-                    FeedText(if (signedIn) accountEmail.orEmpty().take(2).uppercase() else "BT", 18, p.onAccent, FontWeight.ExtraBold)
+                if (signedIn && !accountPhoto.isNullOrBlank()) NetImage(accountPhoto, Modifier.size(56.dp).clip(CircleShape), avatar = true)
+                else Box(Modifier.size(56.dp).background(p.accent, CircleShape), contentAlignment = Alignment.Center) {
+                    FeedText(if (signedIn) accountEmail.orEmpty().take(1).uppercase().ifBlank { "Y" } else "BT", 18, p.onAccent, FontWeight.ExtraBold)
                 }
                 Column(Modifier.weight(1f)) {
-                    FeedText(if (signedIn) accountEmail ?: "YouTube account" else "Guest Mode", 16, p.text, FontWeight.Bold)
-                    FeedText(if (signedIn) "Synced via local SAPISID cookie" else "100% Local SQLite • Zero Server", 12, p.muted)
+                    BText(if (signedIn) accountEmail ?: "YouTube account" else "Guest", 17f, p.text, FontWeight.Bold)
+                    BText(if (signedIn) accountHandle ?: "Signed in with Google" else "Sign in to sync your YouTube", 12f, p.muted)
                 }
                 WatchPill(if (signedIn) "Sign out" else "Sign in", if (signedIn) p.text else p.onAccent,
                     if (signedIn) p.elevated else p.accent) {
                     if (signedIn) signOut() else show("Sign in")
-                }
-                Box(Modifier.size(32.dp).clip(CircleShape).clickable { show("Settings") },
-                    contentAlignment = Alignment.Center) {
-                    Icon(Glyph.SETTINGS, p.muted, Modifier.size(18.dp))
                 }
             }
         }
@@ -621,15 +621,18 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
         item {
             Column(Modifier.background(p.elevated, RoundedCornerShape(16.dp))) {
                 ProfileRow("Downloads", "$downloadCount", Icons.Rounded.Download) { show("Offline Downloads") }
-                ProfileRow("Watch Later", "$laterCount", Icons.Rounded.WatchLater) { show("Watch Later") }
+                ProfileRow("Watch Later", if (signedIn) "" else "$laterCount", Icons.Rounded.WatchLater) { show("Watch Later") }
+                if (signedIn) ProfileRow("Liked videos", "", Icons.Rounded.ThumbUp) { show("Account:LL:Liked videos") }
                 ProfileRow("Playlists", "", Icons.AutoMirrored.Rounded.PlaylistPlay) { show("Playlists") }
                 ProfileRow("History", "", Icons.Rounded.History) { show("History") }
                 ProfileRow("SponsorBlock auto-skip", "", Icons.Rounded.FastForward, toggle = skip, click = toggleSkip)
                 ProfileRow("Return YouTube Dislike", "", Icons.Rounded.ThumbDown, toggle = dislike) {
                     dislike = !dislike; prefs.edit().putBoolean(dislikeKey, dislike).apply()
                 }
-                ProfileRow("Hide Shorts on Home", "", Icons.Rounded.Bolt, toggle = hideShorts, last = true,
+                ProfileRow("Hide Shorts on Home", "", Icons.Rounded.Bolt, toggle = hideShorts,
                     click = toggleHideShorts)
+                ProfileRow("Check for updates", "v" + org.schabi.newpipe.BuildConfig.VERSION_NAME,
+                    Icons.Rounded.SystemUpdate, last = true) { show("Check updates") }
             }
         }
     }

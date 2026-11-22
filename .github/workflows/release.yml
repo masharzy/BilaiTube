@@ -1,0 +1,103 @@
+name: Release BilaiTube
+
+# Push a tag like v1.0.1 to build release APKs and publish them as a GitHub Release.
+# The app's built-in updater reads the latest release from this repository.
+#
+# Signing: add these repository secrets (Settings -> Secrets and variables -> Actions) so every
+# release carries the same signature and in-app updates install over the previous version:
+#   KEYSTORE_BASE64, KEY_STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+# Without them a temporary key is generated for that run only (updates between such builds need a
+# reinstall).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 25
+          distribution: temurin
+          cache: gradle
+
+      - name: Fetch ffmpeg-kit.aar
+        run: |
+          curl -fL --retry 3 -o android/ffmpeg/ffmpeg-kit.aar \
+            https://github.com/InfinityLoop1308/PipePipeClient/raw/43ef494c1a1792a774c223e1982ff1e794c49017/ffmpeg/ffmpeg-kit.aar
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SECRET_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SECRET_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "KEY_PATH=$RUNNER_TEMP/release.jks"
+              echo "KEY_STORE_PASSWORD=$SECRET_STORE_PASSWORD"
+              echo "KEY_ALIAS=$SECRET_KEY_ALIAS"
+              echo "KEY_PASSWORD=$SECRET_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "SIGNING=secrets" >> "$GITHUB_ENV"
+          else
+            pass=$(openssl rand -hex 24)
+            echo "::add-mask::$pass"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/temp.jks" -storetype PKCS12 -alias bilaitube \
+              -keyalg RSA -keysize 4096 -validity 36500 -storepass "$pass" -keypass "$pass" \
+              -dname "CN=BilaiTube temporary key"
+            {
+              echo "KEY_PATH=$RUNNER_TEMP/temp.jks"
+              echo "KEY_STORE_PASSWORD=$pass"
+              echo "KEY_ALIAS=bilaitube"
+              echo "KEY_PASSWORD=$pass"
+            } >> "$GITHUB_ENV"
+            echo "SIGNING=temporary" >> "$GITHUB_ENV"
+            echo "::warning::No signing secrets set; this release uses a one-off key."
+          fi
+
+      - name: Build release APKs
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew :app:assembleRelease --stacktrace -DskipFormatKtlint 2>&1 | tee ../build.log
+          ls -l app/build/outputs/apk/release/
+
+      - name: Release notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then cp "$notes" release-notes.md; else
+            git log --pretty='- %s' -n 30 > release-notes.md; fi
+          if [ "$SIGNING" = "temporary" ]; then
+            printf '\n\n> Signed with a temporary key. If the update does not install over your current app, uninstall it first.\n' >> release-notes.md
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: BilaiTube ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: android/app/build/outputs/apk/release/*.apk
+          make_latest: true
+
+      - name: Publish failure log
+        if: failure()
+        run: |
+          mkdir /tmp/logs && grep -E "^e: |error:|FAILED|What went wrong|Execution failed|AAPT|Caused by" -A3 build.log | head -400 > /tmp/logs/errors.txt || true
+          tail -150 build.log > /tmp/logs/tail.txt || true
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout --orphan ci-logs-release && git rm -rf . -q
+          cp /tmp/logs/* . && git add errors.txt tail.txt
+          git commit -qm "release log for ${GITHUB_SHA}"
+          git push -f origin ci-logs-release

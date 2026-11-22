@@ -381,12 +381,10 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val isMini = !fullscreen && motion.morph >= .5f
-                    val zone = if (isMini) 0 else when {
-                        down.position.x < size.width * .2f -> -1
-                        down.position.x > size.width * .8f -> 1
-                        else -> 0
-                    }
-                    val canMorph = zone == 0 && (isMini || fullscreen || down.position.y < size.height * .6f)
+                    // No brightness/volume edge swipes: every drag on the video belongs to the
+                    // minimize / fullscreen gestures.
+                    val zone = 0
+                    val canMorph = true
                     val startBrightness = window?.attributes?.screenBrightness?.takeIf { it >= 0 } ?: .5f
                     val maxVolume = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                     val startVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -425,7 +423,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     } while (last.pressed)
                     val delta = (point - origin) / density
                     val v = tracker.calculateVelocity()
-                    if (canMorph && ((fullscreen && delta.y >= 14) || (!fullscreen && !isMini && delta.y <= -14))) {
+                    if (canMorph && ((fullscreen && delta.y >= 16) || (!fullscreen && !isMini && delta.y <= -16 && abs(delta.y) > abs(delta.x)))) {
                         motion.release(0f, 0f, 0f, 0f)
                         onFullscreen(!fullscreen)
                         return@awaitEachGesture
@@ -704,7 +702,7 @@ internal fun watchCount(count: Long): String {
     return String.format(java.util.Locale.ROOT, "%.1f", count.toDouble() / divisor).removeSuffix(".0") + unit
 }
 
-private fun watchAge(date: DateWrapper?): String? {
+internal fun watchAge(date: DateWrapper?): String? {
     val time = date?.offsetDateTime() ?: return null
     val now = OffsetDateTime.now()
     for ((unit, label) in listOf(ChronoUnit.YEARS to "year", ChronoUnit.MONTHS to "month",

@@ -1,6 +1,8 @@
 package org.schabi.newpipe.extractor.services.youtube.extractors;
 
-import static org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getJsonPostResponse;
+import static org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.addLoggedInHeaders;
+import static org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getValidJsonResponseBody;
+import static org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getYouTubeHeaders;
 import static org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getTextAtKey;
 import static org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.prepareDesktopJsonBuilder;
 import static org.schabi.newpipe.extractor.utils.Utils.UTF_8;
@@ -21,6 +23,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import org.schabi.newpipe.extractor.NewPipe;
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper;
+import org.schabi.newpipe.extractor.utils.JsonUtils;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -73,7 +79,7 @@ public final class YoutubeHomeFeedExtractor {
         final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
                 .value("browseId", "FEwhat_to_watch")
                 .done()).getBytes(UTF_8);
-        final JsonObject data = getJsonPostResponse("browse", body, localization);
+        final JsonObject data = browse(body, localization);
 
         final JsonObject grid = findFirstObject(data, "richGridRenderer", 0);
         final List<Chip> chips = parseChips(findFirstObject(data, "feedFilterChipBarRenderer", 0));
@@ -91,7 +97,7 @@ public final class YoutubeHomeFeedExtractor {
         final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
                 .value("continuation", token)
                 .done()).getBytes(UTF_8);
-        final JsonObject data = getJsonPostResponse("browse", body, localization);
+        final JsonObject data = browse(body, localization);
 
         final List<Chip> chips = parseChips(findFirstObject(data, "feedFilterChipBarRenderer", 0));
         JsonArray items = null;
@@ -113,6 +119,167 @@ public final class YoutubeHomeFeedExtractor {
             return new Page(Collections.emptyList(), chips, null);
         }
         return parseItems(items, chips, localization);
+    }
+
+    /** A playlist saved in the signed-in account's library. */
+    public static final class AccountPlaylist {
+        public final String id;
+        public final String title;
+        @Nullable
+        public final String thumbnail;
+        @Nullable
+        public final String count;
+
+        AccountPlaylist(final String id, final String title, @Nullable final String thumbnail,
+                        @Nullable final String count) {
+            this.id = id;
+            this.title = title;
+            this.thumbnail = thumbnail;
+            this.count = count;
+        }
+    }
+
+    /**
+     * Loads a playlist page as the signed-in user (works for private lists such as {@code WL} and
+     * {@code LL}). Continue with {@link #fetchContinuation}.
+     */
+    @Nonnull
+    public static Page fetchPlaylist(@Nonnull final String playlistId,
+                                     @Nonnull final Localization localization,
+                                     @Nonnull final ContentCountry country)
+            throws IOException, ExtractionException {
+        final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
+                .value("browseId", "VL" + playlistId)
+                .done()).getBytes(UTF_8);
+        final JsonObject data = browse(body, localization);
+        final JsonObject list = findFirstObject(data, "playlistVideoListRenderer", 0);
+        if (list != null) {
+            return parseItems(list.getArray("contents"), Collections.emptyList(), localization);
+        }
+        final JsonObject section = findFirstObject(data, "sectionListRenderer", 0);
+        if (section == null) {
+            return new Page(Collections.emptyList(), Collections.emptyList(), null);
+        }
+        return parseItems(section.getArray("contents"), Collections.emptyList(), localization);
+    }
+
+    /** Playlists in the signed-in account's library ({@code FEplaylist_aggregation}). */
+    @Nonnull
+    public static List<AccountPlaylist> fetchLibraryPlaylists(@Nonnull final Localization localization,
+                                                              @Nonnull final ContentCountry country)
+            throws IOException, ExtractionException {
+        final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
+                .value("browseId", "FEplaylist_aggregation")
+                .done()).getBytes(UTF_8);
+        final JsonObject data = browse(body, localization);
+        final List<AccountPlaylist> result = new ArrayList<>();
+        collectPlaylists(data, result, 0);
+        return result;
+    }
+
+    private static void collectPlaylists(final Object node, final List<AccountPlaylist> out,
+                                         final int depth) {
+        if (depth > 16) {
+            return;
+        }
+        if (node instanceof JsonObject) {
+            final JsonObject obj = (JsonObject) node;
+            if (obj.has("lockupViewModel")) {
+                final JsonObject lockup = obj.getObject("lockupViewModel");
+                final String type = lockup.getString("contentType", "");
+                if (type.contains("PLAYLIST") || type.contains("PODCAST")) {
+                    final String id = lockup.getString("contentId");
+                    final String title = lockup.getObject("metadata")
+                            .getObject("lockupMetadataViewModel").getObject("title")
+                            .getString("content");
+                    String thumb = null;
+                    String count = null;
+                    final JsonObject image = findFirstObject(lockup.getObject("contentImage"),
+                            "thumbnailViewModel", 0);
+                    if (image != null) {
+                        final JsonArray sources = image.getObject("image").getArray("sources");
+                        if (!sources.isEmpty()) {
+                            thumb = sources.getObject(0).getString("url");
+                        }
+                        final JsonObject badge = findFirstObject(image, "thumbnailBadgeViewModel", 0);
+                        if (badge != null) {
+                            count = badge.getString("text");
+                        }
+                    }
+                    if (id != null && title != null) {
+                        out.add(new AccountPlaylist(id, title, thumb, count));
+                    }
+                }
+                return;
+            }
+            if (obj.has("gridPlaylistRenderer")) {
+                final JsonObject grid = obj.getObject("gridPlaylistRenderer");
+                final String id = grid.getString("playlistId");
+                final String title = getTextAtKeySafe(grid, "title");
+                String thumb = null;
+                final JsonArray thumbs = grid.getObject("thumbnail").getArray("thumbnails");
+                if (!thumbs.isEmpty()) {
+                    thumb = thumbs.getObject(0).getString("url");
+                }
+                if (id != null && title != null) {
+                    out.add(new AccountPlaylist(id, title, thumb,
+                            getTextAtKeySafe(grid, "videoCountShortText")));
+                }
+                return;
+            }
+            for (final Object value : obj.values()) {
+                collectPlaylists(value, out, depth + 1);
+            }
+        } else if (node instanceof JsonArray) {
+            for (final Object value : (JsonArray) node) {
+                collectPlaylists(value, out, depth + 1);
+            }
+        }
+    }
+
+    /**
+     * Name, handle and photo of the signed-in account, or {@code null} without a session.
+     * @return {name, handle, photoUrl}
+     */
+    @Nullable
+    public static String[] fetchAccount(@Nonnull final Localization localization,
+                                        @Nonnull final ContentCountry country)
+            throws IOException, ExtractionException {
+        if (!ServiceList.YouTube.hasTokens()) {
+            return null;
+        }
+        final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
+                .done()).getBytes(UTF_8);
+        final JsonObject data = post("account/account_menu", body, localization);
+        final JsonObject header = findFirstObject(data, "activeAccountHeaderRenderer", 0);
+        if (header == null) {
+            return null;
+        }
+        final String name = getTextAtKeySafe(header, "accountName");
+        final String handle = getTextAtKeySafe(header, "channelHandle");
+        String photo = null;
+        final JsonArray photos = header.getObject("accountPhoto").getArray("thumbnails");
+        if (!photos.isEmpty()) {
+            photo = photos.getObject(photos.size() - 1).getString("url");
+        }
+        return new String[]{name, handle, photo};
+    }
+
+    /** InnerTube browse request that carries the account cookies when a session exists. */
+    private static JsonObject browse(final byte[] body, final Localization localization)
+            throws IOException, ExtractionException {
+        return post("browse", body, localization);
+    }
+
+    private static JsonObject post(final String endpoint, final byte[] body,
+                                   final Localization localization)
+            throws IOException, ExtractionException {
+        final Map<String, List<String>> headers = getYouTubeHeaders();
+        addLoggedInHeaders(headers);
+        headers.put("Content-Type", Collections.singletonList("application/json"));
+        return JsonUtils.toJsonObject(getValidJsonResponseBody(NewPipe.getDownloader().post(
+                YoutubeParsingHelper.YOUTUBEI_V1_URL + endpoint + "?prettyPrint=false", headers, body,
+                localization)));
     }
 
     // ---- parsing -----------------------------------------------------------------------------
@@ -180,6 +347,15 @@ public final class YoutubeHomeFeedExtractor {
                 if (token != null) {
                     continuation[0] = token;
                 }
+            } else if (item.has("playlistVideoRenderer")) {
+                collector.commit(new YoutubeStreamInfoItemExtractor(
+                        item.getObject("playlistVideoRenderer"), timeAgoParser));
+            } else if (item.has("itemSectionRenderer")) {
+                collect(item.getObject("itemSectionRenderer").getArray("contents"), collector,
+                        timeAgoParser, continuation, depth + 1);
+            } else if (item.has("playlistVideoListRenderer")) {
+                collect(item.getObject("playlistVideoListRenderer").getArray("contents"), collector,
+                        timeAgoParser, continuation, depth + 1);
             } else if (item.has("richItemRenderer")) {
                 commitContent(item.getObject("richItemRenderer").getObject("content"),
                         collector, timeAgoParser);

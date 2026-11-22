@@ -80,6 +80,7 @@ internal interface PlaybackEngine {
     fun download(): Boolean
     fun downloadOptions(): List<DownloadOption>
     fun download(option: DownloadOption): Boolean
+    val lastDownloadError: String?
     fun stop()
     fun detach()
 }
@@ -173,10 +174,47 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         return options
     }
 
+    /** Last download error, shown to the user by the UI. */
+    override var lastDownloadError: String? = null
+        private set
+
+    /**
+     * Creates the target file the way PipePipe's download dialog does (the downloader only writes
+     * into an existing file). Public Movies/Music first so the result appears in the gallery and
+     * music apps; app-specific storage as a fallback when shared storage isn't writable.
+     */
+    private fun createTarget(name: String, mime: String, audio: Boolean): StoredFileHelper? {
+        val publicDir = android.os.Environment.getExternalStoragePublicDirectory(
+            if (audio) android.os.Environment.DIRECTORY_MUSIC else android.os.Environment.DIRECTORY_MOVIES)
+        val candidates = listOfNotNull(
+            File(publicDir, "BilaiTube"),
+            app.getExternalFilesDir(if (audio) android.os.Environment.DIRECTORY_MUSIC
+                else android.os.Environment.DIRECTORY_MOVIES),
+            File(app.filesDir, "offline"),
+        )
+        for (dir in candidates) {
+            try {
+                if (!dir.exists() && !dir.mkdirs()) continue
+                var file = File(dir, name)
+                var index = 2
+                while (file.exists()) {
+                    file = File(dir, name.substringBeforeLast('.') + " ($index)." + name.substringAfterLast('.'))
+                    index++
+                }
+                if (!file.createNewFile()) continue
+                val helper = org.schabi.newpipe.streams.io.StoredDirectoryHelper(app, Uri.fromFile(dir),
+                    if (audio) "audio" else "video")
+                return StoredFileHelper(app, Uri.fromFile(dir), Uri.fromFile(file), helper.tag)
+            } catch (e: Exception) {
+                android.util.Log.w("BilaiDownload", "cannot write to $dir", e)
+            }
+        }
+        return null
+    }
+
     override fun download(option: DownloadOption): Boolean {
-        val info = metadata.value ?: return false
-        val directory = File(app.filesDir, "offline")
-        if (!directory.exists() && !directory.mkdirs()) return false
+        lastDownloadError = null
+        val info = metadata.value ?: return false.also { lastDownloadError = "Video info not loaded yet" }
         val primary = option.primary
         val secondary = option.secondary
         val m4a = primary.format == org.schabi.newpipe.extractor.MediaFormat.M4A
@@ -186,8 +224,9 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         }
         val safeTitle = info.name.replace(Regex("[\\\\/:*?\"<>|\n\r]"), " ").trim().take(80)
             .ifBlank { info.id }
-        val target = File(directory, "$safeTitle (${option.label}).$suffix")
-        if (target.exists()) return false
+        val mime = primary.format?.mimeType ?: if (option.audioOnly) "audio/mp4" else "video/mp4"
+        val storage = createTarget("$safeTitle (${option.label}).$suffix", mime, option.audioOnly)
+            ?: return false.also { lastDownloadError = "No writable storage" }
         var psName: String? = when {
             option.audioOnly && m4a -> us.shandian.giga.postprocessing.Postprocessing.ALGORITHM_M4A_NO_DASH
             option.audioOnly -> null
@@ -208,14 +247,12 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
             psName = null
         }
         return try {
-            val storage = StoredFileHelper(app, Uri.fromFile(directory), Uri.fromFile(target),
-                if (option.audioOnly) "audio" else "video")
             DownloadManagerService.startMission(app, urls, storage, if (option.audioOnly) 'a' else 'v',
                 3, info.url, psName, null, option.bytes, recovery, methods, manifests, isUrls, headers)
             true
-        } catch (_: java.io.IOException) {
-            false
-        } catch (_: IllegalStateException) {
+        } catch (e: Exception) {
+            android.util.Log.w("BilaiDownload", "startMission failed", e)
+            lastDownloadError = e.javaClass.simpleName
             false
         }
     }

@@ -35,6 +35,13 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 private const val RETURN_URL = "https://www.youtube.com/signin?action_handle_signin=true&app=desktop&next=%2F"
 
 /** Google's ServiceLogin is best-effort: Google can require identity confirmation. */
+private fun directSignIn() =
+    Uri.parse("https://accounts.google.com/ServiceLogin").buildUpon()
+        .appendQueryParameter("service", "youtube")
+        .appendQueryParameter("passive", "true")
+        .appendQueryParameter("continue", RETURN_URL)
+        .build().toString()
+
 private fun hintedSignIn(email: String) =
     Uri.parse("https://accounts.google.com/ServiceLogin").buildUpon()
         .appendQueryParameter("service", "youtube")
@@ -56,7 +63,8 @@ internal fun AccountPage(close: () -> Unit, signedIn: () -> Unit) {
         }.getOrDefault(emptyList())
     }
     var selectedEmail by remember { mutableStateOf<String?>(null) }
-    var url by remember { mutableStateOf<String?>(null) }
+    // Straight to Google's own sign-in page: email + password (or passkey), nothing in between.
+    var url by remember { mutableStateOf<String?>(if (fixture) null else directSignIn()) }
     var cookies by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -167,12 +175,11 @@ internal fun AccountPage(close: () -> Unit, signedIn: () -> Unit) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(36.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
-                        FeedText(selectedEmail.orEmpty().take(1).uppercase(), 15, p.accent, FontWeight.Bold)
+                        FeedText(selectedEmail?.take(1)?.uppercase() ?: "G", 15, p.accent, FontWeight.Bold)
                     }
                     Column(Modifier.weight(1f)) {
-                        FeedText(selectedEmail.orEmpty(), 13, p.text, FontWeight.SemiBold)
-                        FeedText(if (reason == null) "Signing in with your device account…"
-                            else "Google asked to confirm it's you. Your email is filled in for you.", 11, p.muted)
+                        FeedText(selectedEmail ?: "Sign in with Google", 13, p.text, FontWeight.SemiBold)
+                        FeedText("Your password goes only to Google. BilaiTube keeps the session encrypted on this phone.", 11, p.muted)
                     }
                 }
                 if (failed) FeedText("Sign-in could not be completed. No account was saved.", 12, p.muted)

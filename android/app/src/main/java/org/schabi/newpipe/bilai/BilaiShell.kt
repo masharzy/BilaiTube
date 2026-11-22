@@ -148,6 +148,25 @@ class BilaiShell(private val activity: ComponentActivity) {
         BilaiAccountStore.load(activity) != null,
     )
     private var accountEmail by mutableStateOf(activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).getString("account_email", null))
+    private var accountPhoto by mutableStateOf(activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).getString("account_photo", null))
+    private var accountHandle by mutableStateOf(activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).getString("account_handle", null))
+
+    /** Reads name, handle and photo of the signed-in Google account. */
+    private fun loadAccountProfile() {
+        if (!signedIn) return
+        accountRequests.add(io.reactivex.rxjava3.core.Single.fromCallable {
+            org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor.fetchAccount(
+                org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization(),
+                org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry()) ?: arrayOfNulls<String>(3)
+        }.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ info ->
+            val name = info.getOrNull(0)
+            if (name.isNullOrBlank()) return@subscribe
+            accountEmail = name; accountHandle = info.getOrNull(1); accountPhoto = info.getOrNull(2)
+            activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE).edit()
+                .putString("account_email", name).putString("account_handle", accountHandle)
+                .putString("account_photo", accountPhoto).apply()
+        }, {}))
+    }
 
     fun setPictureInPicture(enabled: Boolean) {
         pip = enabled
@@ -214,7 +233,8 @@ class BilaiShell(private val activity: ComponentActivity) {
     private fun signOut() {
         fixtureSignedIn = false
         BilaiAccountStore.clear(activity)
-        prefs.edit().remove("account_email").apply()
+        prefs.edit().remove("account_email").remove("account_photo").remove("account_handle").apply()
+        accountPhoto = null; accountHandle = null
         localReplies.clear()
         accountRequests.clear()
         pendingAccountActions.clear()
@@ -234,6 +254,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         LocalDomPoTokenProvider.invalidate()
         InfoCache.getInstance().clearCache()
         homeFeed.restart()
+        loadAccountProfile()
         overlay = null
         select(Tab.YOU)
         toast = if (signedIn) "Google account connected" else "Signed out"
@@ -327,6 +348,7 @@ class BilaiShell(private val activity: ComponentActivity) {
             IntentFilter("com.masharzy.bilaitube.DEBUG_UI"), ContextCompat.RECEIVER_EXPORTED)
         autoplay = prefs.getBoolean("autoplay", true)
         handleIntent(activity.intent)
+        loadAccountProfile()
     }
 
     val view = ComposeView(activity).apply { setContent { RenderShell() } }
@@ -421,6 +443,7 @@ class BilaiShell(private val activity: ComponentActivity) {
             compact = false
         }
         if (this.tab == Tab.HOME && tab == Tab.HOME) scrollHome++
+        if (this.tab != Tab.HOME && tab == Tab.HOME) homeFeed.refreshIfStale()
         this.tab = tab
         prefs.edit().putString("tab", tab.id).apply()
     }
@@ -490,7 +513,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     signedIn || (BuildConfig.DEBUG && fixtureSignedIn),
                                     if (BuildConfig.DEBUG && fixtureSignedIn) "devforge@example.com" else accountEmail,
                                     ::changeDark, ::changeAccent, ::signOut, ::play, { overlay = it },
-                                    sponsorBlock, ::toggleSponsorBlock, hideShorts) {
+                                    sponsorBlock, ::toggleSponsorBlock, hideShorts, accountPhoto, accountHandle) {
                                     hideShorts = !hideShorts
                                     prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
                                 }
@@ -530,7 +553,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                             })
                     }
                     overlay?.let { name ->
-                        if (name == "Sign in") {
+                        if (name == "Check updates") {
+                            LaunchedEffect(Unit) { overlay = null; manualUpdateCheck++ }
+                        } else if (name == "Sign in") {
                             AccountPage({ overlay = null }, ::refreshAccount)
                         } else if (name == "Settings") {
                             BrowseScreen("Settings", { overlay = null }) {
@@ -548,7 +573,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 }
                             }
                         } else if (name == "Search") {
-                            SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist)
+                            SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist) { url ->
+                                overlay = null; initialShortUrl = url; select(Tab.SHORTS)
+                            }
                         } else if (name == "Channel") {
                             browseTarget?.let { (url, title) ->
                                 ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist,
@@ -558,6 +585,13 @@ class BilaiShell(private val activity: ComponentActivity) {
                             browseTarget?.let { (url, title) ->
                                 RemotePlaylistPage(url, title, { overlay = "Search" }, ::play)
                             }
+                        } else if (name.startsWith("Account:")) {
+                            val parts = name.split(":", limit = 3)
+                            AccountPlaylistPage(parts[1], parts.getOrElse(2) { "Playlist" }, { overlay = null }, ::play)
+                        } else if (name == "Watch Later" && signedIn) {
+                            AccountPlaylistPage("WL", "Watch Later", { overlay = null }, ::play)
+                        } else if (name == "Playlists" && signedIn) {
+                            AccountPlaylistsPage({ overlay = null }, { id, title -> overlay = "Account:$id:$title" }, ::play)
                         } else if (name in listOf("History", "Watch Later", "Playlists")) {
                             LibraryPage(name, { overlay = null }, ::play)
                         } else if (name == "Offline Downloads") {
@@ -568,8 +602,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 runCatching { engine.downloadOptions() }.getOrDefault(emptyList())
                             }
                             DownloadPickerSheet(current, options, { overlay = null }) { option ->
-                                toast = if (engine.download(option)) "Downloading · ${option.label}"
-                                    else "Already downloaded or unavailable"
+                                toast = if (engine.download(option)) "Downloading ${option.label} · saved to Movies/BilaiTube"
+                                    else "Download failed: " + (engine.lastDownloadError ?: "unavailable")
                             }
                         } else if (name == "Player settings") {
                             PlayerSettings { overlay = null; settingsPage = "Player settings" }
@@ -577,6 +611,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                             WatchSheet(name, { overlay = null })
                         } else Overlay(name, { overlay = null })
                     }
+                    UpdateChecker()
                     AnimatedVisibility(
                         toastText != null && !pip,
                         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp),
@@ -593,6 +628,71 @@ class BilaiShell(private val activity: ComponentActivity) {
             }
         }
     }
+    private var update by mutableStateOf<BilaiUpdater.Release?>(null)
+    private var updateProgress by mutableStateOf<Float?>(null)
+    private var manualUpdateCheck by mutableIntStateOf(0)
+
+    @Composable
+    private fun UpdateChecker() {
+        LaunchedEffect(manualUpdateCheck) {
+            val manual = manualUpdateCheck > 0
+            val last = prefs.getLong("update_checked_at", 0L)
+            if (!manual && (BuildConfig.DEBUG || System.currentTimeMillis() - last < 6 * 3_600_000L)) return@LaunchedEffect
+            prefs.edit().putLong("update_checked_at", System.currentTimeMillis()).apply()
+            val found = BilaiUpdater.check()
+            if (found != null && (manual || prefs.getString("update_skipped", null) != found.version)) update = found
+            else if (manual) toast = "You're on the latest version (${BuildConfig.VERSION_NAME})"
+        }
+        val release = update ?: return
+        val p = LocalBilaiColors.current
+        val scope = rememberCoroutineScope()
+        AnimatedSheet({ if (updateProgress == null) update = null }) { sheet ->
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(44.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                        MIcon(Icons.Rounded.SystemUpdate, p.accent, 24.dp)
+                    }
+                    Column {
+                        BText("Update available", 17f, p.text, FontWeight.Bold)
+                        BText("BilaiTube ${release.version} · you have ${BuildConfig.VERSION_NAME}" +
+                            (if (release.size > 0) " · " + formatBytes(release.size) else ""), 12f, p.muted)
+                    }
+                }
+                if (release.notes.isNotBlank()) Box(Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                    .clip(RoundedCornerShape(12.dp)).background(p.elevated).verticalScroll(rememberScrollState())
+                    .padding(12.dp)) {
+                    BText(release.notes, 13f, p.text, maxLines = 40, lineHeight = 19f)
+                }
+                val progress = updateProgress
+                if (progress != null) {
+                    Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(p.elevated)) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(p.accent))
+                    }
+                    BText("Downloading… ${(progress * 100).toInt()}%", 12f, p.muted)
+                } else Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f).clip(CircleShape).background(p.elevated).clickable {
+                        prefs.edit().putString("update_skipped", release.version).apply(); sheet.close()
+                    }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        BText("Later", 14f, p.text, FontWeight.SemiBold)
+                    }
+                    Box(Modifier.weight(1f).clip(CircleShape).background(p.accent).clickable {
+                        updateProgress = 0f
+                        scope.launch {
+                            val file = BilaiUpdater.download(activity, release) { updateProgress = it }
+                            updateProgress = null
+                            if (file == null) toast = "Update download failed"
+                            else if (!BilaiUpdater.install(activity, file)) toast = "Allow BilaiTube to install updates, then tap Update again"
+                        }
+                    }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        BText("Update now", 14f, p.onAccent, FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.navigationBarsPadding())
+            }
+        }
+    }
+
     private fun share(url: String) {
         val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url)
         activity.startActivity(Intent.createChooser(intent, null))
@@ -617,11 +717,16 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 .padding(vertical = 12.dp)) {
                                 StatCell(watchCount(info?.likeCount ?: -1).ifBlank { "—" }, "Likes", Modifier.weight(1f))
                                 StatCell(watchCount(info?.viewCount ?: -1).ifBlank { "—" }, "Views", Modifier.weight(1f))
-                                StatCell(info?.textualUploadDate ?: info?.uploadDate?.offsetDateTime()?.toLocalDate()?.toString()
-                                    ?: "—", "Published", Modifier.weight(1f))
+                                StatCell(info?.uploadDate?.offsetDateTime()?.toLocalDate()?.let {
+                                    java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH).format(it)
+                                } ?: "—", "Published", Modifier.weight(1f))
                             }
-                            BasicText(info?.description?.content.orEmpty().let {
-                                androidx.core.text.HtmlCompat.fromHtml(it, androidx.core.text.HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
+                            val raw = info?.description?.content.orEmpty()
+                            BasicText(remember(raw, p.accent) {
+                                androidx.compose.ui.text.AnnotatedString.fromHtml(
+                                    if (raw.contains('<')) raw else raw.replace("\n", "<br>"),
+                                    linkStyles = androidx.compose.ui.text.TextLinkStyles(
+                                        androidx.compose.ui.text.SpanStyle(color = p.accent)))
                             }, style = TextStyle(color = p.text, fontSize = 14.sp, lineHeight = 20.sp, fontFamily = BilaiFont))
                             Spacer(Modifier.height(24.dp))
                         }
@@ -749,7 +854,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                     WatchPill("Newest", if (newest) p.onAccent else p.text, if (newest) p.accent else p.elevated) { newest = true }
                 }
             }
-            item {
+            if (signedIn) item {
                 if (!composeComment) WatchPill("Add a comment…", p.text, p.elevated) {
                     if (signedIn) composeComment = true else accountAction()
                 } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -814,28 +919,29 @@ class BilaiShell(private val activity: ComponentActivity) {
             NetImage(comment.uploaderAvatarUrl, Modifier.size(if (nested) 24.dp else 36.dp).clip(CircleShape), avatar = true)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (comment.isPinned) FeedText("Pinned by creator", 11, p.muted)
-                FeedText(listOfNotNull(comment.uploaderName, comment.textualUploadDate).joinToString(" • "),
-                    11, p.muted, FontWeight.SemiBold)
+                BText(listOfNotNull(comment.uploaderName, watchAge(comment.uploadDate)).joinToString(" • "),
+                    12f, p.muted)
                 val body = comment.commentText.content
-                BasicText(body, maxLines = if (fullText) Int.MAX_VALUE else 3,
+                val html = remember(body, p.accent) {
+                    androidx.compose.ui.text.AnnotatedString.fromHtml(body.replace("\n", "<br>"),
+                        linkStyles = androidx.compose.ui.text.TextLinkStyles(
+                            androidx.compose.ui.text.SpanStyle(color = p.accent)))
+                }
+                BasicText(html, maxLines = if (fullText) Int.MAX_VALUE else 4,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    style = TextStyle(color = p.text, fontSize = 13.sp))
+                    style = TextStyle(color = p.text, fontSize = 14.sp, lineHeight = 20.sp, fontFamily = BilaiFont))
                 if (body.length > 120 || body.count { it == '\n' } > 2) {
                     BText(if (fullText) "Show less" else "Read more", 12f, p.muted, FontWeight.SemiBold,
                         modifier = Modifier.clickable { fullText = !fullText })
                 }
-                Row(Modifier.offset(x = (-8).dp), verticalAlignment = Alignment.CenterVertically) {
-                    RoundIconButton(Icons.Rounded.ThumbUpOffAlt, "Like", p.text, Color.Transparent, 34.dp, 17.dp,
-                        click = ::accountAction)
+                // Comment likes and replies can't be sent to YouTube from here, so only the counts are shown.
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MIcon(Icons.Rounded.ThumbUpOffAlt, p.muted, 16.dp)
                     if (comment.likeCount > 0) BText(watchCount(comment.likeCount.toLong()), 12f, p.muted)
-                    Spacer(Modifier.width(6.dp))
-                    RoundIconButton(Icons.Rounded.ThumbDownOffAlt, "Dislike", p.text, Color.Transparent, 34.dp, 17.dp,
-                        click = ::accountAction)
-                    Box(Modifier.clip(CircleShape).clickable { onReply(comment.commentId) }
-                        .padding(horizontal = 10.dp, vertical = 8.dp)) {
-                        BText("Reply", 12f, p.text, FontWeight.SemiBold)
+                    if (comment.isHeartedByUploader) {
+                        Spacer(Modifier.width(8.dp))
+                        MIcon(Icons.Rounded.Favorite, Color(0xFFEF4444), 14.dp, "Hearted by creator")
                     }
-                    if (comment.isHeartedByUploader) MIcon(Icons.Rounded.Favorite, Color(0xFFEF4444), 14.dp, "Hearted")
                 }
                 LocalReplyComposer(replyTo != null && replyTo == comment.commentId, comment.uploaderName.orEmpty(), nested,
                     cancel = { onReply(null) }, submit = submit)
@@ -1097,10 +1203,7 @@ private fun Header(home: () -> Unit, openUrl: () -> Unit, search: () -> Unit, no
                     letterSpacing = (-.025f * 18).sp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                HeaderButton(if (dark) Glyph.SUN else Glyph.MOON, "Toggle appearance", "btn_theme", p.text, toggleDark)
-                HeaderButton(Glyph.PALETTE, "Toggle accent", "btn_accent", p.accent, toggleAccent)
                 HeaderButton(Glyph.LINK, "Open YouTube URL", "btn_url", p.text, openUrl)
-                HeaderButton(Glyph.BELL, "Notifications", "btn_notifications", p.text, notify, true)
                 HeaderButton(Glyph.SEARCH, "Search", "btn_search", p.text, search)
             }
         }
@@ -1182,9 +1285,8 @@ private val play = PathParser().parsePathString("M49,51 Q47,50 47,53 V67 Q47,70 
 @Composable
 private fun Logo() {
     val p = LocalBilaiColors.current
-    Canvas(Modifier.size(28.dp)) {
+    Canvas(Modifier.size(32.dp)) {
         scale(size.width / 108, size.height / 108, pivot = androidx.compose.ui.geometry.Offset.Zero) {
-            drawRoundRect(p.elevated, androidx.compose.ui.geometry.Offset(4f, 4f), Size(100f, 100f), CornerRadius(24f))
             drawPath(cat, p.accent)
             drawPath(play, p.onAccent)
         }

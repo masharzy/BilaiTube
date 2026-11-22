@@ -108,11 +108,13 @@ class HomeFeedViewModel : ViewModel() {
     fun start() {
         if (started) return
         started = true
+        loadedAt = System.currentTimeMillis()
         bootstrap()
     }
 
     /** The account changed (sign in / out): start over with the new session. */
     fun restart() {
+        loadedAt = System.currentTimeMillis()
         chipList = emptyList()
         chipTitles = emptyList()
         allItems = emptyList()
@@ -124,7 +126,16 @@ class HomeFeedViewModel : ViewModel() {
         bootstrap()
     }
 
+    /** When the feed was last loaded from scratch; used to refresh it like YouTube does. */
+    var loadedAt = 0L
+        private set
+
+    fun refreshIfStale(maxAgeMs: Long = 3 * 60_000L) {
+        if (started && System.currentTimeMillis() - loadedAt > maxAgeMs) restart()
+    }
+
     fun refresh() {
+        loadedAt = System.currentTimeMillis()
         started = true
         if (chipList.isEmpty()) bootstrap() else loadSource(chipList[selected].source, append = false)
     }

@@ -10,8 +10,8 @@ def keyPath = System.getenv("KEY_PATH")
 def keyStorePassword = System.getenv("KEY_STORE_PASSWORD")
 def signingKeyAlias = System.getenv("KEY_ALIAS")
 def signingKeyPassword = System.getenv("KEY_PASSWORD")
-def baseVersionCode = 1111
-def appVersionName = "5.6.0"
+def baseVersionCode = 1200
+def appVersionName = "1.0.0"
 def abiCodes = ['armeabi-v7a': 1, 'x86': 2, 'x86_64': 3, 'arm64-v8a': 4]
 def stableBuildConfigVersionCode =
         (100 * baseVersionCode) + abiCodes['armeabi-v7a']
@@ -78,7 +78,7 @@ android {
             }
             if (System.properties.containsKey('packageSuffix')) {
                 applicationIdSuffix System.getProperty('packageSuffix')
-                resValue "string", "app_name", "PipePipe " + System.getProperty('packageSuffix')
+                resValue "string", "app_name", "BilaiTube " + System.getProperty('packageSuffix')
             } else {
                 resValue "string", "app_name", "BilaiTube"
             }
@@ -155,7 +155,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
         }
         output.versionCode.set(versionCode)
         output.outputFileName.set(
-                "PipePipe_${appVersionName}-${abi ?: 'universal'}-${variant.name}.apk")
+                "BilaiTube_${appVersionName}-${abi ?: 'universal'}-${variant.name}.apk")
     }
 }
 

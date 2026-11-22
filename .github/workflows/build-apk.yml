@@ -2,7 +2,7 @@ name: Build BilaiTube APK
 
 on:
   push:
-    branches: [youtube-ui]
+    branches: [youtube-ui, main]
   workflow_dispatch:
 
 permissions:

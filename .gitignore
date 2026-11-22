@@ -4,3 +4,7 @@
 # ffmpeg-kit.aar is fetched in CI (see .github/workflows/build-apk.yml)
 android/ffmpeg/*.aar
 android/ffmpeg/*.bk
+
+# never commit signing keys
+*.jks
+*.keystore
