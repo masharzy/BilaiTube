@@ -4,6 +4,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.fromHtml
 import android.content.Context
 import android.content.pm.ActivityInfo
 import androidx.core.view.WindowInsetsCompat
@@ -723,7 +725,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                             }
                             val raw = info?.description?.content.orEmpty()
                             BasicText(remember(raw, p.accent) {
-                                androidx.compose.ui.text.AnnotatedString.fromHtml(
+                                AnnotatedString.fromHtml(
                                     if (raw.contains('<')) raw else raw.replace("\n", "<br>"),
                                     linkStyles = androidx.compose.ui.text.TextLinkStyles(
                                         androidx.compose.ui.text.SpanStyle(color = p.accent)))
@@ -923,7 +925,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                     12f, p.muted)
                 val body = comment.commentText.content
                 val html = remember(body, p.accent) {
-                    androidx.compose.ui.text.AnnotatedString.fromHtml(body.replace("\n", "<br>"),
+                    AnnotatedString.fromHtml(body.replace("\n", "<br>"),
                         linkStyles = androidx.compose.ui.text.TextLinkStyles(
                             androidx.compose.ui.text.SpanStyle(color = p.accent)))
                 }
