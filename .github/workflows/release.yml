@@ -1,7 +1,8 @@
 name: Release BilaiTube
 
-# Push a tag like v1.0.1 to build release APKs and publish them as a GitHub Release.
-# The app's built-in updater reads the latest release from this repository.
+# Raise `appVersionName` in android/app/build.gradle and push to `main`: if no release exists for
+# that version yet, this builds release APKs, creates the tag v<version> and publishes a GitHub
+# Release. The app's built-in updater reads the latest release from this repository.
 #
 # Signing: add these repository secrets (Settings -> Secrets and variables -> Actions) so every
 # release carries the same signature and in-app updates install over the previous version:
@@ -10,7 +11,7 @@ name: Release BilaiTube
 # reinstall).
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,18 +24,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^def appVersionName = "\(.*\)"/\1/p' android/app/build.gradle)
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v$version already exists; nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-java@v4
+        if: steps.version.outputs.exists == 'false'
         with:
           java-version: 25
           distribution: temurin
           cache: gradle
 
       - name: Fetch ffmpeg-kit.aar
+        if: steps.version.outputs.exists == 'false'
         run: |
           curl -fL --retry 3 -o android/ffmpeg/ffmpeg-kit.aar \
             https://github.com/InfinityLoop1308/PipePipeClient/raw/43ef494c1a1792a774c223e1982ff1e794c49017/ffmpeg/ffmpeg-kit.aar
 
       - name: Signing key
+        if: steps.version.outputs.exists == 'false'
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           SECRET_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
@@ -67,6 +85,7 @@ jobs:
           fi
 
       - name: Build release APKs
+        if: steps.version.outputs.exists == 'false'
         working-directory: android
         run: |
           chmod +x gradlew
@@ -75,8 +94,9 @@ jobs:
           ls -l app/build/outputs/apk/release/
 
       - name: Release notes
+        if: steps.version.outputs.exists == 'false'
         run: |
-          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          notes="docs/releases/${{ steps.version.outputs.tag }}.md"
           if [ -f "$notes" ]; then cp "$notes" release-notes.md; else
             git log --pretty='- %s' -n 30 > release-notes.md; fi
           if [ "$SIGNING" = "temporary" ]; then
@@ -84,9 +104,12 @@ jobs:
           fi
 
       - name: Publish GitHub Release
+        if: steps.version.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          name: BilaiTube ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: BilaiTube ${{ steps.version.outputs.tag }}
           body_path: release-notes.md
           files: android/app/build/outputs/apk/release/*.apk
           make_latest: true

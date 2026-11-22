@@ -49,9 +49,10 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
-GitHub Actions builds every push (`.github/workflows/build-apk.yml`). Pushing a tag such as
-`v1.0.1` runs `.github/workflows/release.yml`, which builds signed release APKs and publishes a
-GitHub Release that the in-app updater picks up. Put release notes in `docs/releases/<tag>.md`.
+GitHub Actions builds every push (`.github/workflows/build-apk.yml`). To publish a release, raise
+`appVersionName` in `android/app/build.gradle`, add notes in `docs/releases/v<version>.md` and push
+to `main`: `.github/workflows/release.yml` builds signed APKs, creates the tag and the GitHub
+Release, and the in-app updater offers it to everyone.
 
 ### Release signing
 
