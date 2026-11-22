@@ -127,18 +127,30 @@ jobs:
           echo "${GITHUB_SHA}" > "/tmp/pub/${GITHUB_SHA}/SHA.txt"
           git config user.name ci
           git config user.email ci@users.noreply.github.com
-          if git fetch origin ci-screenshots; then
-            git switch -C ci-screenshots FETCH_HEAD
-          else
-            git checkout --orphan ci-screenshots
-            git rm -rf . -q
-          fi
-          rm -rf latest
-          cp -r "/tmp/pub/${GITHUB_SHA}" latest
-          cp -r "/tmp/pub/${GITHUB_SHA}" .
-          git add latest "${GITHUB_SHA}"
-          git commit -qm "screenshots for ${GITHUB_SHA}"
-          git push origin HEAD:ci-screenshots
+          # Screenshot runners may finish simultaneously. Rebase the publication on
+          # the newest remote tip and retry; never force-push or lose older evidence.
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if git fetch origin ci-screenshots; then
+              git switch -C ci-screenshots FETCH_HEAD
+            else
+              git checkout --orphan ci-screenshots
+              git rm -rf . -q
+            fi
+            rm -rf latest
+            cp -r "/tmp/pub/${GITHUB_SHA}" latest
+            cp -r "/tmp/pub/${GITHUB_SHA}" .
+            git add latest "${GITHUB_SHA}"
+            if ! git diff --cached --quiet; then
+              git commit -qm "screenshots for ${GITHUB_SHA} (attempt ${attempt})"
+            fi
+            if git push origin HEAD:ci-screenshots; then
+              echo "Screenshots published on attempt ${attempt}"
+              exit 0
+            fi
+            sleep "$((attempt * 2))"
+          done
+          echo "Screenshot publishing failed after 8 non-destructive retries" >&2
+          exit 1
 
       - name: Upload screenshot diagnostics
         if: always()
