@@ -1,29 +1,29 @@
 Applications Graphics Acceleration Info:
-Uptime: 306768 Realtime: 306768
+Uptime: 280699 Realtime: 280699
 
-** Graphics info for pid 5656 [com.masharzy.bilaitube] **
+** Graphics info for pid 5576 [com.masharzy.bilaitube] **
 
-Stats since: 289720444906ns
-Total frames rendered: 155
-Janky frames: 154 (99.35%)
-Janky frames (legacy): 155 (100.00%)
-50th percentile: 117ms
-90th percentile: 250ms
-95th percentile: 350ms
-99th percentile: 1750ms
-Number Missed Vsync: 84
-Number High input latency: 1
+Stats since: 265439050820ns
+Total frames rendered: 167
+Janky frames: 164 (98.20%)
+Janky frames (legacy): 167 (100.00%)
+50th percentile: 101ms
+90th percentile: 150ms
+95th percentile: 300ms
+99th percentile: 1500ms
+Number Missed Vsync: 87
+Number High input latency: 4
 Number Slow UI thread: 119
-Number Slow bitmap uploads: 56
-Number Slow issue draw commands: 154
-Number Frame deadline missed: 154
-Number Frame deadline missed (legacy): 155
-HISTOGRAM: 5ms=0 6ms=0 7ms=0 8ms=0 9ms=0 10ms=0 11ms=0 12ms=0 13ms=0 14ms=0 15ms=0 16ms=0 17ms=0 18ms=0 19ms=0 20ms=0 21ms=0 22ms=0 23ms=0 24ms=0 25ms=0 26ms=0 27ms=0 28ms=0 29ms=0 30ms=0 31ms=0 32ms=0 34ms=0 36ms=0 38ms=0 40ms=0 42ms=0 44ms=0 46ms=0 48ms=1 53ms=2 57ms=1 61ms=6 65ms=0 69ms=3 73ms=6 77ms=5 81ms=9 85ms=9 89ms=7 93ms=5 97ms=4 101ms=4 105ms=4 109ms=4 113ms=4 117ms=4 121ms=8 125ms=5 129ms=3 133ms=2 150ms=36 200ms=8 250ms=4 300ms=4 350ms=2 400ms=0 450ms=4 500ms=0 550ms=0 600ms=0 650ms=0 700ms=0 750ms=0 800ms=0 850ms=0 900ms=0 950ms=0 1000ms=0 1050ms=0 1100ms=0 1150ms=0 1200ms=0 1250ms=0 1300ms=0 1350ms=0 1400ms=0 1450ms=0 1500ms=0 1550ms=0 1600ms=0 1650ms=0 1700ms=0 1750ms=1 1800ms=0 1850ms=0 1900ms=0 1950ms=0 2000ms=0 2050ms=0 2100ms=0 2150ms=0 2200ms=0 2250ms=0 2300ms=0 2350ms=0 2400ms=0 2450ms=0 2500ms=0 2550ms=0 2600ms=0 2650ms=0 2700ms=0 2750ms=0 2800ms=0 2850ms=0 2900ms=0 2950ms=0 3000ms=0 3050ms=0 3100ms=0 3150ms=0 3200ms=0 3250ms=1 3300ms=0 3350ms=0 3400ms=0 3450ms=0 3500ms=0 3550ms=0 3600ms=0 3650ms=0 3700ms=0 3750ms=0 3800ms=0 3850ms=0 3900ms=0 3950ms=0 4000ms=0 4050ms=0 4100ms=0 4150ms=0 4200ms=0 4250ms=0 4300ms=0 4350ms=0 4400ms=0 4450ms=0 4500ms=0 4550ms=0 4600ms=0 4650ms=0 4700ms=0 4750ms=0 4800ms=0 4850ms=0 4900ms=0 4950ms=0
+Number Slow bitmap uploads: 61
+Number Slow issue draw commands: 164
+Number Frame deadline missed: 164
+Number Frame deadline missed (legacy): 166
+HISTOGRAM: 5ms=0 6ms=0 7ms=0 8ms=0 9ms=0 10ms=0 11ms=0 12ms=0 13ms=0 14ms=0 15ms=0 16ms=0 17ms=0 18ms=0 19ms=0 20ms=0 21ms=0 22ms=0 23ms=0 24ms=0 25ms=0 26ms=0 27ms=0 28ms=0 29ms=0 30ms=0 31ms=0 32ms=0 34ms=0 36ms=0 38ms=0 40ms=0 42ms=0 44ms=0 46ms=1 48ms=4 53ms=6 57ms=3 61ms=3 65ms=6 69ms=11 73ms=8 77ms=6 81ms=7 85ms=6 89ms=8 93ms=7 97ms=6 101ms=3 105ms=3 109ms=4 113ms=5 117ms=5 121ms=5 125ms=9 129ms=8 133ms=2 150ms=26 200ms=2 250ms=3 300ms=3 350ms=1 400ms=1 450ms=0 500ms=0 550ms=1 600ms=2 650ms=0 700ms=0 750ms=0 800ms=0 850ms=0 900ms=0 950ms=0 1000ms=0 1050ms=0 1100ms=0 1150ms=0 1200ms=0 1250ms=0 1300ms=0 1350ms=0 1400ms=0 1450ms=0 1500ms=1 1550ms=0 1600ms=0 1650ms=0 1700ms=0 1750ms=0 1800ms=0 1850ms=0 1900ms=0 1950ms=0 2000ms=0 2050ms=0 2100ms=0 2150ms=0 2200ms=0 2250ms=0 2300ms=0 2350ms=1 2400ms=0 2450ms=0 2500ms=0 2550ms=0 2600ms=0 2650ms=0 2700ms=0 2750ms=0 2800ms=0 2850ms=0 2900ms=0 2950ms=0 3000ms=0 3050ms=0 3100ms=0 3150ms=0 3200ms=0 3250ms=0 3300ms=0 3350ms=0 3400ms=0 3450ms=0 3500ms=0 3550ms=0 3600ms=0 3650ms=0 3700ms=0 3750ms=0 3800ms=0 3850ms=0 3900ms=0 3950ms=0 4000ms=0 4050ms=0 4100ms=0 4150ms=0 4200ms=0 4250ms=0 4300ms=0 4350ms=0 4400ms=0 4450ms=0 4500ms=0 4550ms=0 4600ms=0 4650ms=0 4700ms=0 4750ms=0 4800ms=0 4850ms=0 4900ms=0 4950ms=0
 50th gpu percentile: 4950ms
 90th gpu percentile: 4950ms
 95th gpu percentile: 4950ms
 99th gpu percentile: 4950ms
-GPU HISTOGRAM: 1ms=0 2ms=0 3ms=0 4ms=0 5ms=0 6ms=0 7ms=0 8ms=0 9ms=0 10ms=0 11ms=0 12ms=0 13ms=0 14ms=0 15ms=0 16ms=0 17ms=0 18ms=0 19ms=0 20ms=0 21ms=0 22ms=0 23ms=0 24ms=0 25ms=0 4950ms=156
+GPU HISTOGRAM: 1ms=0 2ms=0 3ms=0 4ms=0 5ms=0 6ms=0 7ms=0 8ms=0 9ms=0 10ms=0 11ms=0 12ms=0 13ms=0 14ms=0 15ms=0 16ms=0 17ms=0 18ms=0 19ms=0 20ms=0 21ms=0 22ms=0 23ms=0 24ms=0 25ms=0 4950ms=167
 
 Pipeline=Skia (OpenGL)
 Memory policy:
@@ -45,21 +45,21 @@ GPU Caches:
   Image:
     Texture: 278.54 KB (11 entries)
   Scratch:
-    RenderTarget: 80.00 KB (1 entry)
-    Texture: 2.00 MB (16 entries)
+    RenderTarget: 9.88 MB (2 entries)
+    Texture: 2.00 MB (17 entries)
     Buffer Object: 112.00 KB (3 entries)
 Layer Info:
     GlLayer size 1170x2085
   Layers Total         9529.10 KB (numLayers = 1)
 Total GPU memory usage:
-  2656984 bytes, 2.53 MB (371.57 KB is purgeable)
+  12929752 bytes, 12.33 MB (10.16 MB is purgeable)
 
 Profile data in ms:
 
-	com.masharzy.bilaitube/org.schabi.newpipe.MainActivity/android.view.ViewRootImpl@527b3ca (visibility=0)
+	com.masharzy.bilaitube/org.schabi.newpipe.MainActivity/android.view.ViewRootImpl@7464875 (visibility=0)
 View hierarchy:
 
-  com.masharzy.bilaitube/org.schabi.newpipe.MainActivity/android.view.ViewRootImpl@527b3ca
+  com.masharzy.bilaitube/org.schabi.newpipe.MainActivity/android.view.ViewRootImpl@7464875
   19 views, 36.21 kB of render nodes
 
 
