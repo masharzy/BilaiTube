@@ -99,6 +99,7 @@ class HomeFeedViewModel : ViewModel() {
         chipTitles = emptyList()
         allItems = emptyList()
         rows = emptyList()
+        shortItems = emptyList()
         continuation = null
         selected = 0
         started = true

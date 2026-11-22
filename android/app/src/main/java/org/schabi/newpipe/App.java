@@ -174,8 +174,7 @@ public class App extends MultiDexApplication {
     public static void reconcileYoutubePlayerClient(@NonNull final Context context) {
         final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         final String playerClientKey = context.getString(R.string.youtube_player_client_key);
-        final boolean loggedIn = !TextUtils.isEmpty(prefs.getString(
-                context.getString(R.string.youtube_cookies_key), null));
+        final boolean loggedIn = !TextUtils.isEmpty(org.schabi.newpipe.bilai.engine.BilaiAccountStore.load(context));
         final String defaultClient = loggedIn ? "mweb" : "visionos";
         final String selectedClient = prefs.getString(playerClientKey, defaultClient);
         final boolean allowed = loggedIn

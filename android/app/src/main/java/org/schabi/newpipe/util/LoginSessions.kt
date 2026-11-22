@@ -60,9 +60,22 @@ object LoginSessions {
         val webUrls: List<String>,
         val userAgent: String? = null,
         /** extra state to clear when the login expires */
+        val encryptedContext: Context? = null,
         val onExpired: (Context) -> Unit = {},
     ) {
-        val stored: String? get() = prefs.getString(cookiesKey, null)
+        val stored: String? get() = if (encryptedContext == null) prefs.getString(cookiesKey, null)
+            else org.schabi.newpipe.bilai.engine.BilaiAccountStore.load(encryptedContext)
+
+        fun store(cookies: String?) {
+            val context = encryptedContext
+            if (context == null) {
+                prefs.edit { putString(cookiesKey, cookies) }
+            } else if (cookies.isNullOrEmpty()) {
+                org.schabi.newpipe.bilai.engine.BilaiAccountStore.clear(context)
+            } else {
+                org.schabi.newpipe.bilai.engine.BilaiAccountStore.save(context, cookies)
+            }
+        }
         fun isLoggedIn() = !stored.isNullOrEmpty()
         val missesKey get() = "misses_$name/$cookiesKey"
     }
@@ -77,7 +90,7 @@ object LoginSessions {
             "https://www.youtube.com/", "https://music.youtube.com/", "https://m.youtube.com/",
             "https://accounts.google.com/", "https://www.google.com/",
         ),
-        YOUTUBE_UA,
+        YOUTUBE_UA, encryptedContext = context.applicationContext,
     ) { ctx ->
         LocalDomPoTokenProvider.invalidate()
         App.reconcileYoutubePlayerClient(ctx)
@@ -131,7 +144,7 @@ object LoginSessions {
     @JvmStatic
     fun logoutAll(context: Context) {
         state(context).edit { clear() }
-        all(context).forEach { it.prefs.edit { putString(it.cookiesKey, "") } }
+        all(context).forEach { it.store("") }
         LocalDomPoTokenProvider.invalidate()
         ServiceHelper.initServices(context)
         InfoCache.getInstance().clearCache()
@@ -174,7 +187,7 @@ object LoginSessions {
     }
 
     private fun expire(context: Context, account: Account) {
-        account.prefs.edit { putString(account.cookiesKey, "") }
+        account.store("")
         account.onExpired(context)
         ServiceHelper.initServices(context)
         InfoCache.getInstance().clearCache()
@@ -255,7 +268,7 @@ object LoginSessions {
             if (hasCookie(cookies, account.loginCookie)) {
                 states.edit { remove(account.missesKey) }
                 if (cookies != account.stored) {
-                    account.prefs.edit { putString(account.cookiesKey, cookies) }
+                    account.store(cookies)
                     ServiceHelper.initServices(context)
                 }
             } else {

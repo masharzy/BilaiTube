@@ -74,6 +74,15 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import android.app.PictureInPictureParams
+import android.os.Build
+import android.util.Rational
+import org.schabi.newpipe.App
+import org.schabi.newpipe.bilai.engine.BilaiAccountStore
+import org.schabi.newpipe.util.InfoCache
+import org.schabi.newpipe.util.LoginSessions
+import org.schabi.newpipe.util.ServiceHelper
+import org.schabi.newpipe.youtube.LocalDomPoTokenProvider
 import org.schabi.newpipe.BuildConfig
 
 private enum class Tab(val id: String, val label: String, val glyph: Glyph) {
@@ -112,6 +121,38 @@ class BilaiShell(private val activity: ComponentActivity) {
         else (preferredCaption?.takeIf { it in engine.state.value.subtitles }
             ?: engine.state.value.subtitles.firstOrNull())?.let(::chooseCaptions)
     }
+    private var pip by mutableStateOf(false)
+    private var signedIn by mutableStateOf(
+        BilaiAccountStore.load(activity) != null,
+    )
+
+    fun setPictureInPicture(enabled: Boolean) { pip = enabled }
+
+    private fun enterPictureInPicture() {
+        if (Build.VERSION.SDK_INT < 26 || video == null ||
+            !activity.packageManager.hasSystemFeature("android.software.picture_in_picture")) {
+            toast = "Picture-in-picture unavailable"
+            return
+        }
+        overlay = null
+        if (!activity.enterPictureInPictureMode(PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9)).build())) {
+            toast = "Picture-in-picture unavailable"
+        }
+    }
+
+    private fun refreshAccount() {
+        signedIn = BilaiAccountStore.load(activity) != null
+        App.reconcileYoutubePlayerClient(activity)
+        ServiceHelper.initService(
+            activity, ServiceList.YouTube.serviceId,
+        )
+        LocalDomPoTokenProvider.invalidate()
+        InfoCache.getInstance().clearCache()
+        homeFeed.restart()
+        overlay = "Settings"
+    }
+
     private var fullscreen by mutableStateOf(false)
     private var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
@@ -147,6 +188,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                 "expand" -> compact = false
                 "open_desc" -> if (video != null) overlay = "Description"
                 "open_menu" -> if (video != null) { menuVideo = null; overlay = "Video options" }
+                "enter_pip" -> enterPictureInPicture()
+                "open_app_settings" -> overlay = "Settings"
+                "open_account" -> overlay = "Sign in"
                 "open_search" -> overlay = "Search"
             }
         }
@@ -184,6 +228,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun play(url: String, title: String) {
+        if (tab == Tab.SHORTS) select(Tab.HOME)
         quality = null
         compact = false
         overlay = null
@@ -232,6 +277,10 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun select(tab: Tab) {
+        if (this.tab == Tab.SHORTS && tab != Tab.SHORTS) {
+            engine.stop()
+            initialShortUrl = null
+        }
         if (tab == Tab.SHORTS && this.tab != Tab.SHORTS && video != null) {
             engine.stop()
             video = null
@@ -245,6 +294,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     @Composable
     private fun RenderShell() {
         val dark = debugDark ?: isSystemInDarkTheme()
+        val videoOnly = fullscreen || pip
         val list = rememberLazyListState()
         LaunchedEffect(hideShorts) { homeFeed.hideShorts = hideShorts }
         LaunchedEffect(scrollHome) { if (scrollHome > 0) list.scrollToItem(0) }
@@ -276,12 +326,12 @@ class BilaiShell(private val activity: ComponentActivity) {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            Box(Modifier.fillMaxSize().background(colors.bg).then(if (fullscreen) Modifier else Modifier.systemBarsPadding()).background(colors.outerBg)
+            Box(Modifier.fillMaxSize().background(colors.bg).then(if (videoOnly) Modifier else Modifier.systemBarsPadding()).background(colors.outerBg)
                 .then(if (BuildConfig.DEBUG) Modifier.semantics { testTagsAsResourceId = true } else Modifier),
                 contentAlignment = Alignment.Center) {
-                Box(Modifier.then(if (fullscreen) Modifier else Modifier.widthIn(max = 430.dp).heightIn(max = 880.dp)).fillMaxSize()
+                Box(Modifier.then(if (videoOnly) Modifier else Modifier.widthIn(max = 430.dp).heightIn(max = 880.dp)).fillMaxSize()
                     .background(colors.bg)) {
-                    if (!fullscreen) Column(Modifier.fillMaxSize()) {
+                    if (!videoOnly) Column(Modifier.fillMaxSize()) {
                         Header(
                             home = { homeFeed.select(0); scrollHome++; select(Tab.HOME) },
                             openUrl = { overlay = "Open Any YouTube URL" },
@@ -296,7 +346,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 }, ::openVideoMenu)
                                 Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, { overlay = "Sign in to continue" }, ::share)
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu)
-                                Tab.YOU -> YouTab(dark, ::play, { overlay = it }, hideShorts) {
+                                Tab.YOU -> YouTab(dark, signedIn, ::play, { overlay = it }, hideShorts) {
                                     hideShorts = !hideShorts
                                     prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
                                 }
@@ -305,7 +355,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         BottomNav(tab, ::select)
                     }
                     video?.let { (url, title) ->
-                        Watch(url, title, engine, compact, { compact = it }, fullscreen, ::requestFullscreen, playbackSpeed,
+                        Watch(url, title, engine, compact, { compact = it }, videoOnly, ::requestFullscreen, playbackSpeed, pip,
                             captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
                             close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play, overlay = { name ->
@@ -322,7 +372,29 @@ class BilaiShell(private val activity: ComponentActivity) {
                             })
                     }
                     overlay?.let { name ->
-                        if (name == "Search") {
+                        if (name == "Sign in") {
+                            AccountPage({ overlay = "Settings" }, ::refreshAccount)
+                        } else if (name == "Settings") {
+                            BrowseScreen("Settings", { overlay = null }) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    FeedText(if (dark) "Appearance · Device dark" else "Appearance · Device light", 14, colors.text)
+                                    WatchPill(if (autoplay) "Autoplay on" else "Autoplay off", colors.text, colors.elevated, click = ::toggleAutoplay)
+                                    WatchPill(if (hideShorts) "Show Shorts" else "Hide Shorts", colors.text, colors.elevated) {
+                                        hideShorts = !hideShorts
+                                        prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
+                                    }
+                                    WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
+                                        if (signedIn) {
+                                            BilaiAccountStore.clear(activity)
+                                            LoginSessions.onLogout(activity,
+                                                LoginSessions.youtube(activity))
+                                            refreshAccount()
+                                        } else overlay = "Sign in"
+                                    }
+                                }
+                            }
+                        } else if (name == "Search") {
                             SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist)
                         } else if (name == "Channel") {
                             browseTarget?.let { (url, title) ->
@@ -345,7 +417,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         } else Overlay(name, { overlay = null })
                     }
                     AnimatedVisibility(
-                        toastText != null,
+                        toastText != null && !pip,
                         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp),
                         enter = fadeIn(), exit = fadeOut(),
                     ) {
@@ -410,6 +482,13 @@ class BilaiShell(private val activity: ComponentActivity) {
                         if (current != null) WatchPill("Save to Watch Later", p.text, p.elevated) {
                             WatchLater.add(activity, current)
                             dismiss()
+                        }
+                        if (current == null && video != null) {
+                            WatchPill("Picture-in-picture", p.text, p.elevated) { enterPictureInPicture() }
+                            WatchPill("Background play", p.text, p.elevated) {
+                                dismiss()
+                                activity.moveTaskToBack(true)
+                            }
                         }
                         if (url != null) WatchPill("Share", p.text, p.elevated) { dismiss(); share(url) }
                         WatchPill("Cancel", p.text, p.elevated, click = dismiss)
@@ -584,6 +663,11 @@ class BilaiShell(private val activity: ComponentActivity) {
                         MenuRow("Captions", captions ?: "Off") { settingsPage = "Captions" }
                         MenuRow("Quality", quality?.let { "${it}p" } ?: "Auto") { settingsPage = "Quality" }
                         MenuRow("Playback speed", formatSpeed(playbackSpeed)) { settingsPage = "Playback speed" }
+                        MenuRow("Picture-in-picture", "") { enterPictureInPicture() }
+                        MenuRow("Background play", "") {
+                            dismiss()
+                            activity.moveTaskToBack(true)
+                        }
                         MenuRow("Loop video", if (loopVideo) "On" else "Off") {
                             loopVideo = !loopVideo; engine.setLoop(loopVideo)
                         }

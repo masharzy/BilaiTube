@@ -65,7 +65,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 @Composable
 internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: Boolean,
-                   onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float,
+                   onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float, pictureInPicture: Boolean,
                    captionsOn: Boolean, toggleCaptions: () -> Unit,
                    autoplay: Boolean, toggleAutoplay: () -> Unit, close: () -> Unit, playNext: (String, String) -> Unit,
                    overlay: (String) -> Unit) {
@@ -279,6 +279,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             }, modifier = Modifier.fillMaxSize(), update = { texture ->
                 if (videoWidth > 0 && videoHeight > 0) resizeTexture(texture)
             })
+            if (pictureInPicture) return@Box
             Box(Modifier.fillMaxSize().onGloballyPositioned { pointerCoordinates[0] = it }
                 .pointerInput(url, density, fullscreen) {
                 fun toRoot(position: Offset): Offset {

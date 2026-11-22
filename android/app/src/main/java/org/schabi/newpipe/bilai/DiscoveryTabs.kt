@@ -69,7 +69,6 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
     val active = clips.getOrNull(pager.settledPage)
     val state by engine.state.collectAsState()
     LaunchedEffect(active?.url) { active?.let { engine.play(it.url) } }
-    DisposableEffect(engine) { onDispose { engine.stop() } }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (clips.isEmpty()) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -175,7 +174,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
 }
 
 @Composable
-internal fun YouTab(dark: Boolean, open: (String, String) -> Unit, show: (String) -> Unit,
+internal fun YouTab(dark: Boolean, signedIn: Boolean, open: (String, String) -> Unit, show: (String) -> Unit,
                    hideShorts: Boolean, toggleHideShorts: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(context) { PreferenceManager.getDefaultSharedPreferences(context) }
@@ -201,10 +200,10 @@ internal fun YouTab(dark: Boolean, open: (String, String) -> Unit, show: (String
                     FeedText("BT", 18, p.onAccent, FontWeight.ExtraBold)
                 }
                 Column(Modifier.weight(1f)) {
-                    FeedText("Guest Mode", 16, p.text, FontWeight.Bold)
+                    FeedText(if (signedIn) "YouTube account" else "Guest Mode", 16, p.text, FontWeight.Bold)
                     FeedText("100% Local SQLite • Zero Server", 12, p.muted)
                 }
-                WatchPill("Sign in", p.text, p.elevated) { show("Sign in") }
+                WatchPill(if (signedIn) "Manage" else "Sign in", p.text, p.elevated) { show(if (signedIn) "Settings" else "Sign in") }
             }
         }
         item {

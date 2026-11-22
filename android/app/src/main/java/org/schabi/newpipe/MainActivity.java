@@ -26,6 +26,13 @@ public final class MainActivity extends ComponentActivity {
     }
 
     @Override
+    public void onPictureInPictureModeChanged(final boolean inPictureInPictureMode,
+                                              final android.content.res.Configuration config) {
+        super.onPictureInPictureModeChanged(inPictureInPictureMode, config);
+        if (shell != null) shell.setPictureInPicture(inPictureInPictureMode);
+    }
+
+    @Override
     protected void onNewIntent(final Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);

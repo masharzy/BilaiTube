@@ -294,8 +294,7 @@ public final class ServiceHelper {
         } else if (serviceId == ServiceList.YouTube.getServiceId()) {
             final SharedPreferences sharedPreferences = PreferenceManager
                     .getDefaultSharedPreferences(context);
-            final String tokens = sharedPreferences.getString(context.getString(
-                    R.string.youtube_cookies_key), null);
+            final String tokens = org.schabi.newpipe.bilai.engine.BilaiAccountStore.load(context);
             final String audioLanguage = sharedPreferences.getString(context.getString(
                     R.string.preferred_audio_language_key),"original");
             final String autoTranslatedSubtitlesLanguage = sharedPreferences.getString(context.getString(

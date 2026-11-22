@@ -85,6 +85,8 @@ capture_page library_history open_history History
 capture_page library_watch_later open_watch_later 'Watch Later'
 capture_page library_playlists open_playlists Playlists
 capture_page library_downloads open_downloads 'Offline Downloads'
+capture_page app_settings open_app_settings Appearance
+capture_page account_sign_in open_account 'Choose account'
 capture 00_player_host true amber home
 adb shell -T "run-as $pkg sh -c 'cat > sample.mp4'" < /tmp/bilai-sample.mp4
 adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
@@ -116,10 +118,16 @@ adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action open_de
 sleep 1
 adb exec-out screencap -p > "$out/12_desc_sheet.png"
 adb shell input keyevent BACK
+capture_page 13_video_menu open_menu 'Video options'
+adb shell dumpsys gfxinfo "$pkg" reset >/dev/null
 adb shell input swipe 585 300 585 1500 2500 &
 swipe_job=$!
-sleep 1
-adb exec-out screencap -p > "$out/09_watch_mid_drag.png"
+sleep .35
+for i in {01..10}; do
+  adb exec-out screencap -p > "$out/drag_$i.png"
+  sleep .06
+done
+cp "$out/drag_05.png" "$out/09_watch_mid_drag.png"
 wait "$swipe_job"
 adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action minimize
 sleep 1
@@ -128,4 +136,11 @@ adb exec-out screencap -p > "$out/10_mini_br.png"
 adb shell input swipe 900 2100 260 300 1800
 sleep 1
 adb exec-out screencap -p > "$out/11_mini_tl.png"
+if adb shell pm list features | grep -q android.software.picture_in_picture; then
+  adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action enter_pip
+  sleep 2
+  adb shell dumpsys activity activities > "$out/pip_activity.txt"
+  adb exec-out screencap -p > "$out/player_pip.png"
+fi
 adb logcat -d -v time > "$out/logcat.txt"
+adb shell dumpsys gfxinfo "$pkg" > "$out/gfxinfo.txt"
