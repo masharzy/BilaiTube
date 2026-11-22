@@ -2,6 +2,6 @@ Starting: Intent { cmp=com.masharzy.bilaitube/org.schabi.newpipe.MainActivity (h
 Status: ok
 LaunchState: COLD
 Activity: com.masharzy.bilaitube/org.schabi.newpipe.MainActivity
-TotalTime: 3511
-WaitTime: 3513
+TotalTime: 3222
+WaitTime: 3252
 Complete
