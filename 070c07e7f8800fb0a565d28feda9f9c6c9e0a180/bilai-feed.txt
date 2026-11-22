@@ -1,0 +1,5 @@
+--------- beginning of main
+11-22 17:31:50.420  2381  2381 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 17:32:03.039  2625  2625 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 17:32:15.983  2803  2803 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
+11-22 17:32:27.344  2972  2972 W BilaiFeed: home feed returned no items; chips=0, localization=Localization[en-US], country=US; fallback to search
