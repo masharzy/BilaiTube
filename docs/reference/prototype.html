@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BilaiTube — Full YouTube Mobile UI (Light &amp; Dark + Spring Physics)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      /* Light Mode (Exact YouTube Light) */
+      --bg: #FFFFFF;
+      --surface: #FFFFFF;
+      --elevated: #F2F2F2;
+      --elevated-hover: #E5E5E5;
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #0F0F0F;
+      --muted: #606060;
+      --chip-active-bg: #0F0F0F;
+      --chip-active-text: #FFFFFF;
+      --accent: #F59E0B;
+      --accent-soft: rgba(245, 158, 11, 0.14);
+      --on-accent: #1A1205;
+      --outer-bg: #E9E7E4;
+      --sheet-bg: #FFFFFF;
+    }
+    html.dark {
+      /* Dark Mode (YouTube Dark + Warm Charcoal) */
+      --bg: #0F0F0F;
+      --surface: #181716;
+      --elevated: #272523;
+      --elevated-hover: #363330;
+      --border: rgba(255, 255, 255, 0.09);
+      --text: #F1F1F1;
+      --muted: #AAAAAA;
+      --chip-active-bg: #F1F1F1;
+      --chip-active-text: #0F0F0F;
+      --outer-bg: #070707;
+      --sheet-bg: #1E1D1B;
+    }
+    html.theme-red {
+      --accent: #FF0033;
+      --accent-soft: rgba(255, 0, 51, 0.14);
+      --on-accent: #FFFFFF;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--outer-bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: background-color 0.22s ease, color 0.22s ease;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .yt-bg { background-color: var(--bg); }
+    .yt-surface { background-color: var(--surface); }
+    .yt-elevated { background-color: var(--elevated); }
+    .yt-sheet { background-color: var(--sheet-bg); }
+    .yt-text { color: var(--text); }
+    .yt-muted { color: var(--muted); }
+    .yt-border { border-color: var(--border); }
+    .yt-accent { color: var(--accent); }
+    .yt-accent-bg { background-color: var(--accent); color: var(--on-accent); }
+    .yt-accent-soft { background-color: var(--accent-soft); color: var(--accent); }
+
+    #phoneStage {
+      position: relative;
+      width: 100%;
+      max-width: 430px;
+      height: 100vh;
+      max-height: 880px;
+      background: var(--bg);
+      overflow: hidden;
+      touch-action: none;
+      transition: background-color 0.22s ease;
+    }
+    @media (min-width: 520px) {
+      #phoneStage {
+        height: min(93vh, 852px);
+        border-radius: 34px;
+        border: 1px solid var(--border);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.42);
+      }
+    }
+    .touch-drag { touch-action: none; }
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    @keyframes pulseSeek {
+      0% { transform: scale(0.85); opacity: 0; }
+      35% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(1.1); opacity: 0; }
+    }
+    .seek-flash { animation: pulseSeek 0.55s ease-out forwards; }
+  </style>
+</head>
+<body class="flex items-center justify-center min-h-screen w-screen">
+
+  <div class="w-full h-full flex items-center justify-center px-0 sm:px-4">
+    <div id="phoneStage" class="flex flex-col">
+
+      <!-- ========================================================= -->
+      <!-- EXACT YOUTUBE MOBILE TOP HEADER                           -->
+      <!-- ========================================================= -->
+      <header id="homeHeader" class="h-12 px-3.5 flex items-center justify-between gap-2 yt-bg border-b yt-border shrink-0 z-10">
+        <button id="brandHomeBtn" class="flex items-center gap-1.5 focus:outline-none">
+          <svg viewBox="0 0 108 108" class="w-7 h-7 shrink-0" aria-hidden="true">
+            <rect x="4" y="4" width="100" height="100" rx="24" fill="var(--elevated)"/>
+            <path id="logoCatPath" fill="var(--accent)" d="M35,49 L37,34 Q37.5,30 41,32 L51,41 H58 L68,32 Q72,30 72,35 L74,49 Q80,53 80,61 V65 Q80,77 68,77 H40 Q28,77 28,65 V61 Q28,53 35,49 Z"/>
+            <path id="logoPlayPath" fill="var(--on-accent)" d="M49,51 Q47,50 47,53 V67 Q47,70 50,69 L64,61 Q66,60 64,58 Z"/>
+          </svg>
+          <span class="font-extrabold text-[18px] tracking-tight yt-text">BilaiTube</span>
+        </button>
+
+        <div class="flex items-center gap-0.5">
+          <button id="themeToggleBtn" class="w-9 h-9 rounded-full flex items-center justify-center yt-text hover:opacity-75 transition" title="Toggle Light / Dark Mode">
+            <i data-lucide="sun" class="w-[19px] h-[19px]"></i>
+          </button>
+          <button id="accentToggleBtn" class="w-9 h-9 rounded-full flex items-center justify-center yt-accent hover:opacity-75 transition" title="Switch Warm Amber / YouTube Red">
+            <i data-lucide="palette" class="w-[19px] h-[19px]"></i>
+          </button>
+          <button id="urlModalOpenBtn" class="w-9 h-9 rounded-full flex items-center justify-center yt-text hover:opacity-75 transition" title="Open YouTube URL">
+            <i data-lucide="link-2" class="w-[19px] h-[19px]"></i>
+          </button>
+          <button id="notifBtn" class="relative w-9 h-9 rounded-full flex items-center justify-center yt-text hover:opacity-75 transition" title="Notifications">
+            <i data-lucide="bell" class="w-[19px] h-[19px]"></i>
+            <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style="background: var(--accent);"></span>
+          </button>
+          <button id="searchOpenBtn" class="w-9 h-9 rounded-full flex items-center justify-center yt-text hover:opacity-75 transition" title="Search">
+            <i data-lucide="search" class="w-[19px] h-[19px]"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- ========================================================= -->
+      <!-- MAIN TAB CONTAINER (Home / Shorts / Subscriptions / You)  -->
+      <!-- ========================================================= -->
+      <div id="mainContent" class="flex-1 overflow-y-auto no-scrollbar yt-bg relative">
+        <div id="tabViewRoot"></div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- EXACT YOUTUBE MOBILE BOTTOM NAV (4 TABS)                  -->
+      <!-- ========================================================= -->
+      <nav id="bottomNav" class="h-14 yt-surface border-t yt-border grid grid-cols-4 items-center shrink-0 z-10">
+        <button data-btab="home" class="btab-btn flex flex-col items-center justify-center gap-0.5 py-1">
+          <i data-lucide="home" class="w-5 h-5"></i>
+          <span class="text-[10px]">Home</span>
+        </button>
+        <button data-btab="shorts" class="btab-btn flex flex-col items-center justify-center gap-0.5 py-1">
+          <i data-lucide="zap" class="w-5 h-5"></i>
+          <span class="text-[10px]">Shorts</span>
+        </button>
+        <button data-btab="subs" class="btab-btn flex flex-col items-center justify-center gap-0.5 py-1">
+          <i data-lucide="rss" class="w-5 h-5"></i>
+          <span class="text-[10px]">Subscriptions</span>
+        </button>
+        <button data-btab="you" class="btab-btn flex flex-col items-center justify-center gap-0.5 py-1">
+          <i data-lucide="circle-user-round" class="w-5 h-5"></i>
+          <span class="text-[10px]">You</span>
+        </button>
+      </nav>
+
+      <!-- ========================================================= -->
+      <!-- YOUTUBE SEARCH OVERLAY                                    -->
+      <!-- ========================================================= -->
+      <div id="searchOverlay" class="hidden absolute inset-0 z-40 yt-bg flex flex-col">
+        <div class="h-12 px-2 flex items-center gap-2 border-b yt-border shrink-0">
+          <button id="searchCloseBtn" class="w-9 h-9 rounded-full flex items-center justify-center yt-text">
+            <i data-lucide="arrow-left" class="w-5 h-5"></i>
+          </button>
+          <input id="searchInput" type="text" placeholder="Search BilaiTube..." class="flex-1 h-9 px-3.5 rounded-full yt-elevated yt-text text-sm focus:outline-none" />
+          <button id="searchClearBtn" class="hidden w-8 h-8 rounded-full flex items-center justify-center yt-muted">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div id="searchResultsRoot" class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-3"></div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- WATCH PAGE BACKDROP & DETAILS (Fades as video drags down) -->
+      <!-- ========================================================= -->
+      <div id="watchBackdrop" class="hidden absolute inset-0 yt-bg z-20 pointer-events-none" style="opacity: 0;"></div>
+
+      <div id="watchDetailsLayer" class="hidden absolute left-0 right-0 bottom-0 z-20 yt-bg overflow-y-auto no-scrollbar" style="top: 242px; opacity: 0;">
+        <div class="px-3.5 pt-3 pb-36 space-y-3.5">
+          <!-- Title & Meta -->
+          <div id="descTrigger" class="cursor-pointer group">
+            <h1 id="wTitle" class="text-[17px] font-bold yt-text leading-snug"></h1>
+            <p class="text-xs yt-muted mt-1 flex items-center gap-1">
+              <span id="wMetaText"></span>
+              <span class="yt-text font-semibold">...more</span>
+            </p>
+          </div>
+
+          <!-- Channel Row -->
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div id="wAvatar" class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"></div>
+              <div class="min-w-0">
+                <p id="wChannel" class="text-sm font-semibold yt-text truncate"></p>
+                <p id="wSubs" class="text-[11px] yt-muted"></p>
+              </div>
+            </div>
+            <button id="wSubBtn" class="px-4 py-1.5 rounded-full text-xs font-bold transition shrink-0"></button>
+          </div>
+
+          <!-- Horizontal YouTube Action Pills -->
+          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+            <div class="flex items-center rounded-full yt-elevated shrink-0 overflow-hidden">
+              <button id="wLikeBtn" class="px-3.5 py-2 flex items-center gap-1.5 text-xs font-semibold transition">
+                <i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i>
+                <span id="wLikeCount">0</span>
+              </button>
+              <div class="w-px h-4" style="background: var(--border);"></div>
+              <button id="wDislikeBtn" class="px-3 py-2 flex items-center gap-1.5 text-xs font-medium transition">
+                <i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i>
+                <span id="wDislikeCount">0</span>
+              </button>
+            </div>
+            <button id="wShareBtn" class="px-3.5 py-2 rounded-full yt-elevated text-xs font-semibold yt-text flex items-center gap-1.5 shrink-0 transition">
+              <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+              <span>Share</span>
+            </button>
+            <button id="wDownloadBtn" class="px-3.5 py-2 rounded-full yt-elevated text-xs font-semibold yt-text flex items-center gap-1.5 shrink-0 transition">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span id="wDownloadText">Download</span>
+            </button>
+            <button id="wMiniQuickBtn" class="px-3.5 py-2 rounded-full yt-accent-soft text-xs font-semibold flex items-center gap-1.5 shrink-0 transition">
+              <i data-lucide="minimize-2" class="w-3.5 h-3.5"></i>
+              <span>Float</span>
+            </button>
+            <button id="hudToggleBtn" class="px-3.5 py-2 rounded-full yt-elevated text-xs font-semibold yt-text flex items-center gap-1.5 shrink-0 transition">
+              <i data-lucide="activity" class="w-3.5 h-3.5 yt-accent"></i>
+              <span>Physics HUD</span>
+            </button>
+          </div>
+
+          <!-- Comments Preview Card -->
+          <div id="commentsPreviewCard" class="p-3 rounded-2xl yt-elevated cursor-pointer transition">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-bold yt-text">Comments <span class="font-normal yt-muted">1.2K</span></span>
+              <i data-lucide="chevrons-up-down" class="w-3.5 h-3.5 yt-muted"></i>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full yt-accent-bg flex items-center justify-center text-[10px] font-bold shrink-0">AR</div>
+              <p id="wTopComment" class="text-xs yt-text line-clamp-2 leading-snug opacity-90"></p>
+            </div>
+          </div>
+
+          <!-- Up Next List -->
+          <div class="space-y-3 pt-1">
+            <p class="text-xs font-bold uppercase tracking-wider yt-muted">Up Next</p>
+            <div id="wRelatedList" class="space-y-3"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- MORPHING SPRING PHYSICS VIDEO SURFACE                     -->
+      <!-- ========================================================= -->
+      <div id="videoSurface" class="hidden absolute z-30 bg-black overflow-hidden touch-drag cursor-grab active:cursor-grabbing" style="left: 0; top: 0; width: 100%; height: 242px; border-radius: 0px;">
+        <img id="vThumb" src="" alt="" class="w-full h-full object-cover pointer-events-none" />
+        <iframe id="vYoutubeFrame" class="hidden w-full h-full border-0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+
+        <div id="dragHandlePill" class="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-white/50 pointer-events-none"></div>
+
+        <!-- Full-Mode Top Controls -->
+        <div id="vFullTopBar" class="absolute top-2.5 inset-x-3 flex items-center justify-between pointer-events-auto">
+          <button id="vDownBtn" class="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/75 transition" title="Minimize">
+            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+          </button>
+          <div class="flex items-center gap-1.5">
+            <span class="px-2 py-0.5 rounded-full bg-emerald-500/90 text-black text-[10px] font-bold">SponsorBlock</span>
+            <button id="vSpeedBtn" class="px-2 py-1 rounded-full bg-black/55 text-[10px] font-bold text-white">1.0x</button>
+          </div>
+        </div>
+
+        <!-- Center Play/Pause Button -->
+        <button id="vPlayBtn" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/55 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white transition">
+          <i data-lucide="pause" class="w-5 h-5"></i>
+        </button>
+
+        <!-- Mini-Mode Close Button -->
+        <button id="vMiniCloseBtn" class="hidden absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/80 text-white flex items-center justify-center hover:bg-red-500 transition z-10" title="Dismiss">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+
+        <!-- Double-Tap Seek Flash -->
+        <div id="seekFlashBadge" class="hidden absolute inset-y-0 right-5 my-auto h-10 px-3 rounded-full bg-black/75 text-white text-xs font-bold flex items-center gap-1 pointer-events-none">
+          <i data-lucide="fast-forward" class="w-3.5 h-3.5 yt-accent"></i>
+          <span>+10s</span>
+        </div>
+
+        <!-- Bottom Progress Bar -->
+        <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pt-5 pb-1.5 px-2.5">
+          <div id="vTimeRow" class="flex items-center justify-between text-[10px] font-mono text-white/90 mb-1">
+            <span id="vTimeLabel">01:42 / 14:40</span>
+            <span class="text-[10px] font-sans font-semibold" style="color: var(--accent);">Drag down ↓</span>
+          </div>
+          <div class="w-full h-1 bg-white/25 rounded-full overflow-hidden relative">
+            <div id="vProgressFill" class="h-full absolute left-0 top-0" style="width: 18%; background: var(--accent);"></div>
+            <div id="vSponsorBar" class="h-full bg-emerald-400 absolute top-0" style="left: 38%; width: 10%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- EXPANDABLE DESCRIPTION / COMMENTS / ACTION BOTTOM SHEET   -->
+      <!-- ========================================================= -->
+      <div id="descSheet" class="hidden absolute inset-x-0 bottom-0 top-[242px] z-40 yt-sheet border-t yt-border rounded-t-2xl flex flex-col shadow-2xl">
+        <div class="px-4 py-3 border-b yt-border flex items-center justify-between shrink-0">
+          <span id="sheetHeading" class="text-sm font-bold yt-text">Description</span>
+          <button id="closeDescSheetBtn" class="p-1 rounded-full yt-muted hover:opacity-80">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div id="descSheetBody" class="p-4 overflow-y-auto no-scrollbar text-xs yt-text space-y-3 leading-relaxed"></div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- 3-DOT VIDEO MENU BOTTOM SHEET                             -->
+      <!-- ========================================================= -->
+      <div id="videoMenuSheet" class="hidden absolute inset-0 z-50 bg-black/60 flex items-end">
+        <div class="w-full yt-sheet rounded-t-3xl p-4 pb-6 space-y-1 border-t yt-border shadow-2xl">
+          <div class="w-10 h-1 rounded-full bg-gray-500/40 mx-auto mb-3"></div>
+          <button id="menuWatchLaterBtn" class="w-full flex items-center gap-3.5 px-3 py-3 rounded-xl hover:opacity-80 yt-text text-sm font-medium">
+            <i data-lucide="clock" class="w-5 h-5"></i><span>Save to Watch Later</span>
+          </button>
+          <button id="menuDownloadBtn" class="w-full flex items-center gap-3.5 px-3 py-3 rounded-xl hover:opacity-80 yt-text text-sm font-medium">
+            <i data-lucide="download" class="w-5 h-5"></i><span>Download video (Offline)</span>
+          </button>
+          <button id="menuShareBtn" class="w-full flex items-center gap-3.5 px-3 py-3 rounded-xl hover:opacity-80 yt-text text-sm font-medium">
+            <i data-lucide="share-2" class="w-5 h-5"></i><span>Share</span>
+          </button>
+          <button id="menuCloseBtn" class="w-full mt-2 py-2.5 rounded-full yt-elevated yt-text text-xs font-semibold">Cancel</button>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- LIVE PHYSICS TELEMETRY HUD (Toggleable, Bottom-Docked)    -->
+      <!-- ========================================================= -->
+      <div id="physicsHud" class="hidden absolute bottom-2 left-2.5 right-2.5 z-50 rounded-2xl bg-[#161412]/95 text-white backdrop-blur-md border border-amber-500/40 p-2.5 text-[10px] font-mono shadow-2xl pointer-events-auto">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold tracking-wide uppercase" style="color: var(--accent);">Spring Physics &amp; Velocity Tracker</span>
+          <button id="closeHudBtn" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5 text-center mb-2">
+          <div class="bg-white/10 rounded-lg py-1 px-1.5">
+            <div class="text-gray-400 text-[9px]">STATE</div>
+            <div id="hudState" class="font-bold" style="color: var(--accent);">IDLE</div>
+          </div>
+          <div class="bg-white/10 rounded-lg py-1 px-1.5">
+            <div class="text-gray-400 text-[9px]">VELOCITY (px/s)</div>
+            <div id="hudVel" class="text-emerald-400 font-bold">0, 0</div>
+          </div>
+          <div class="bg-white/10 rounded-lg py-1 px-1.5">
+            <div class="text-gray-400 text-[9px]">MORPH / SNAP</div>
+            <div id="hudMorph" class="text-sky-300 font-bold">0.00 • BR</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-[9px] text-gray-300">
+          <label class="flex flex-col gap-0.5">
+            <span>Stiffness (k): <strong id="kVal" class="text-white">320</strong></span>
+            <input id="kSlider" type="range" min="140" max="600" value="320" class="accent-amber-500 h-1" />
+          </label>
+          <label class="flex flex-col gap-0.5">
+            <span>Damping (c): <strong id="cVal" class="text-white">28</strong></span>
+            <input id="cSlider" type="range" min="12" max="46" value="28" class="accent-amber-500 h-1" />
+          </label>
+        </div>
+      </div>
+
+      <!-- YouTube URL Loader Modal -->
+      <div id="urlModal" class="hidden absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full rounded-2xl yt-sheet border yt-border p-4 space-y-3 shadow-2xl">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold yt-text">Open Any YouTube URL</h3>
+            <button id="closeUrlModalBtn" class="yt-muted"><i data-lucide="x" class="w-4 h-4"></i></button>
+          </div>
+          <p class="text-[11px] yt-muted">যেকোনো YouTube লিংক পেস্ট করো—BilaiTube-এর ফিজিক্স প্লেয়ারে চলবে:</p>
+          <input id="ytUrlInput" type="text" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ" class="w-full px-3 py-2 rounded-xl yt-elevated yt-text text-xs focus:outline-none" />
+          <div class="flex justify-end gap-2">
+            <button id="cancelUrlBtn" class="px-3 py-1.5 rounded-full text-xs yt-muted">Cancel</button>
+            <button id="loadUrlBtn" class="px-4 py-1.5 rounded-full text-xs font-bold yt-accent-bg">Play Video</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast -->
+      <div id="toast" class="hidden absolute bottom-16 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-full bg-[#181716] text-white border border-white/15 text-xs font-semibold shadow-xl whitespace-nowrap"></div>
+    </div>
+  </div>
+
+  <script>
+    const VIDEOS = [
+      {
+        id: 'v1', ytId: null,
+        title: 'Building a 60FPS YouTube-Style Spring Physics Mini-Player on Android',
+        channel: 'DevForge Labs', subs: '284K subscribers', avatarColor: 'bg-amber-600', avatar: 'DF',
+        views: '142K views', date: 'Nov 19, 2026', age: '2 days ago',
+        durationSec: 880, duration: '14:40', cat: 'Coding', likes: 9420, dislikes: 88,
+        progressInit: 34,
+        topComment: 'That spring physics when you flick the video into the corner feels smoother than stock YouTube!',
+        description: 'In this deep dive we recreate the exact damped harmonic spring physics, pointer velocity tracking, and 2D corner-gravity snap used in modern mobile video players.\n\nChapters:\n00:00 Intro & Physics Demo\n02:30 Velocity Tracker Ring Buffer\n06:15 Continuous Morphing (Full -> Floating PiP)\n10:40 Magnetic 4-Corner Gravity Snap\n\n#BilaiTube #Android #PhysicsUI',
+        thumb: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23555'/></svg>"
+      },
+      {
+        id: 'v2', ytId: null,
+        title: 'Rainy Dhaka at Twilight — 4K Cinematic Street Walk & Ambient Soundscape',
+        channel: 'Frames of Bengal', subs: '510K subscribers', avatarColor: 'bg-orange-600', avatar: 'FB',
+        views: '318K views', date: 'Nov 16, 2026', age: '5 days ago',
+        durationSec: 1125, duration: '18:45', cat: 'Travel', likes: 24800, dislikes: 140,
+        progressInit: 0,
+        topComment: 'The golden streetlights reflecting on the wet Dhaka road look unreal in Warm Amber dark mode.',
+        description: 'A quiet twilight walk through Old Dhaka right after a monsoon shower. Shot in 4K 60fps with binaural ambient audio.\n\n#Dhaka #Bangladesh #4KWalk',
+        thumb: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23555'/></svg>"
+      },
+      {
+        id: 'v3', ytId: null,
+        title: 'Open-Source Android Apps in 2026: Best Ad-Free Alternatives Tested',
+        channel: 'Minimal Tech Daily', subs: '890K subscribers', avatarColor: 'bg-emerald-600', avatar: 'MT',
+        views: '620K views', date: 'Nov 14, 2026', age: '1 week ago',
+        durationSec: 740, duration: '12:20', cat: 'Tech', likes: 41200, dislikes: 420,
+        progressInit: 68,
+        topComment: 'Zero-server local-first apps with SponsorBlock and clean Light/Dark themes are the future.',
+        description: 'We tested the best privacy-respecting open-source Android apps of 2026—from ad-free video clients to offline music and document tools.\n\n#FOSS #Android #OpenSource',
+        thumb: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23555'/></svg>"
+      },
+      {
+        id: 'v4', ytId: null,
+        title: 'Above the Clouds: 4K HDR Sunrise Over the Eastern Himalayas',
+        channel: 'EarthLens 4K', subs: '1.9M subscribers', avatarColor: 'bg-sky-600', avatar: 'EL',
+        views: '1.4M views', date: 'Nov 02, 2026', age: '3 weeks ago',
+        durationSec: 1510, duration: '25:10', cat: 'Documentary', likes: 88300, dislikes: 710,
+        progressInit: 0,
+        topComment: 'Watching this in floating PiP while scrolling through the feed is pure bliss.',
+        description: 'Breathtaking aerial footage captured at 14,000 feet during golden hour sunrise over misty mountain ridges.\n\n#4KHDR #Nature #Documentary',
+        thumb: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23555'/></svg>"
+      }
+    ];
+
+    const SHORTS = [
+      { id: 's1', title: '60s Spring Physics Trick for Android Mini-Players', channel: '@DevForgeLabs', views: '1.2M views', likes: '98K', thumb: VIDEOS[0].thumb },
+      { id: 's2', title: 'Dhaka Rainy Evening in 4K — Zero Color Grading', channel: '@FramesOfBengal', views: '840K views', likes: '72K', thumb: VIDEOS[1].thumb },
+      { id: 's3', title: 'Hidden Open-Source Android App You Need Today', channel: '@MinimalTech', views: '510K views', likes: '44K', thumb: VIDEOS[2].thumb }
+    ];
+
+    const CATS = ['All', 'Coding', 'Tech', 'Travel', 'Documentary'];
+    const SPEEDS = [1.0, 1.25, 1.5, 2.0, 0.75];
+
+    const state = {
+      dark: true,
+      accentMode: 'amber', // 'amber' | 'red'
+      tab: 'home',
+      cat: 'All',
+      subFilter: null,
+      shortIdx: 0,
+      isLoggedIn: false,
+      sponsorBlock: true,
+      returnDislike: true,
+      hideShorts: false,
+      currentVideo: null,
+      menuVideoId: null,
+      isPlaying: false,
+      progressPct: 18,
+      speedIdx: 0,
+      liked: new Set(['v1']),
+      disliked: new Set(),
+      subs: new Set(['DevForge Labs', 'Frames of Bengal']),
+      downloads: new Set(['v3']),
+      watchLater: new Set(['v2']),
+      history: ['v1', 'v3'],
+      hudVisible: false
+    };
+
+    // =========================================================================
+    // SPRING PHYSICS & VELOCITY TRACKER ENGINE
+    // =========================================================================
+    const stageEl = document.getElementById('phoneStage');
+    const videoEl = document.getElementById('videoSurface');
+    const watchBackdrop = document.getElementById('watchBackdrop');
+    const watchDetails = document.getElementById('watchDetailsLayer');
+
+    const physics = {
+      mode: 'closed',
+      morph: 0, morphTarget: 0, morphVel: 0,
+      miniX: 0, miniY: 0, miniTargetX: 0, miniTargetY: 0, miniVx: 0, miniVy: 0,
+      cornerLabel: 'BR',
+      stiffness: 320, damping: 28,
+      dragging: false, dragType: null,
+      startX: 0, startY: 0, startMorph: 0, startMiniX: 0, startMiniY: 0, movedDist: 0,
+      samples: [], lastMeasuredVx: 0, lastMeasuredVy: 0,
+      rafId: null, lastTs: 0
+    };
+
+    function getStageDims() {
+      const r = stageEl.getBoundingClientRect();
+      const w = r.width || 390;
+      const h = r.height || 780;
+      const fullH = Math.round(w * 9 / 16);
+      const miniW = Math.round(Math.min(186, w * 0.47));
+      const miniH = Math.round(miniW * 9 / 16);
+      return { w, h, fullH, miniW, miniH, pad: 12, topSafe: 58, bottomSafe: 68 };
+    }
+
+    function getCornerTargets(dims) {
+      return {
+        TL: { x: dims.pad, y: dims.topSafe },
+        TR: { x: dims.w - dims.miniW - dims.pad, y: dims.topSafe },
+        BL: { x: dims.pad, y: dims.h - dims.miniH - dims.bottomSafe },
+        BR: { x: dims.w - dims.miniW - dims.pad, y: dims.h - dims.miniH - dims.bottomSafe }
+      };
+    }
+
+    function pickNearestCorner(px, py, dims) {
+      const corners = getCornerTargets(dims);
+      let bestKey = 'BR', bestDist = Infinity;
+      for (const [key, pt] of Object.entries(corners)) {
+        const d = Math.hypot(pt.x - px, pt.y - py);
+        if (d < bestDist) { bestDist = d; bestKey = key; }
+      }
+      return { key: bestKey, ...corners[bestKey] };
+    }
+
+    function recordVelocitySample(x, y, now) {
+      physics.samples.push({ x, y, t: now });
+      const cutoff = now - 90;
+      while (physics.samples.length > 2 && physics.samples[0].t < cutoff) physics.samples.shift();
+    }
+
+    function computeVelocity() {
+      if (physics.samples.length < 2) return { vx: 0, vy: 0 };
+      const first = physics.samples[0];
+      const last = physics.samples[physics.samples.length - 1];
+      const dt = (last.t - first.t) / 1000;
+      if (dt <= 0.004) return { vx: 0, vy: 0 };
+      return { vx: (last.x - first.x) / dt, vy: (last.y - first.y) / dt };
+    }
+
+    function updateHud() {
+      if (!state.hudVisible) return;
+      document.getElementById('hudState').textContent = physics.dragging
+        ? (physics.dragType === 'morph' ? 'DRAG-MORPH' : 'DRAG-2D')
+        : physics.mode.toUpperCase();
+      document.getElementById('hudVel').textContent = `${Math.round(physics.lastMeasuredVx)}, ${Math.round(physics.lastMeasuredVy)}`;
+      document.getElementById('hudMorph').textContent = `${physics.morph.toFixed(2)} • ${physics.cornerLabel}`;
+    }
+
+    function applyGeometry() {
+      if (physics.mode === 'closed') return;
+      const d = getStageDims();
+      const t = Math.max(0, Math.min(1.12, physics.morph));
+      const clampedT = Math.max(0, Math.min(1, t));
+
+      const x = physics.miniX * t;
+      const y = physics.miniY * t;
+      const width = d.w + (d.miniW - d.w) * clampedT;
+      const height = d.fullH + (d.miniH - d.fullH) * clampedT;
+      const radius = 14 * clampedT;
+
+      videoEl.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0)`;
+      videoEl.style.width = `${width.toFixed(2)}px`;
+      videoEl.style.height = `${height.toFixed(2)}px`;
+      videoEl.style.borderRadius = `${radius.toFixed(1)}px`;
+      videoEl.style.boxShadow = clampedT > 0.05
+        ? `0 ${Math.round(16 * clampedT)}px ${Math.round(36 * clampedT)}px rgba(0,0,0,${(0.55 * clampedT).toFixed(2)})`
+        : 'none';
+
+      const detailsOpacity = Math.max(0, 1 - clampedT * 1.45);
+      watchBackdrop.style.opacity = String(detailsOpacity.toFixed(3));
+      watchDetails.style.opacity = String(detailsOpacity.toFixed(3));
+      watchDetails.style.top = `${d.fullH}px`;
+      watchDetails.style.transform = `translate3d(0, ${(clampedT * 90).toFixed(1)}px, 0)`;
+      watchDetails.style.pointerEvents = clampedT < 0.2 ? 'auto' : 'none';
+
+      const isMiniVisual = clampedT > 0.55;
+      document.getElementById('vFullTopBar').classList.toggle('hidden', isMiniVisual);
+      document.getElementById('dragHandlePill').classList.toggle('hidden', isMiniVisual);
+      document.getElementById('vTimeRow').classList.toggle('hidden', isMiniVisual);
+      document.getElementById('vMiniCloseBtn').classList.toggle('hidden', !isMiniVisual);
+      updateHud();
+    }
+
+    function stepSpring(dt) {
+      const k = physics.stiffness, c = physics.damping;
+      let active = false;
+      if (!physics.dragging) {
+        const fMorph = -k * (physics.morph - physics.morphTarget) - c * physics.morphVel;
+        physics.morphVel += fMorph * dt;
+        physics.morph += physics.morphVel * dt;
+        if (Math.abs(physics.morph - physics.morphTarget) > 0.0015 || Math.abs(physics.morphVel) > 0.005) active = true;
+        else { physics.morph = physics.morphTarget; physics.morphVel = 0; }
+
+        const fx = -k * (physics.miniX - physics.miniTargetX) - c * physics.miniVx;
+        const fy = -k * (physics.miniY - physics.miniTargetY) - c * physics.miniVy;
+        physics.miniVx += fx * dt; physics.miniVy += fy * dt;
+        physics.miniX += physics.miniVx * dt; physics.miniY += physics.miniVy * dt;
+        if (Math.abs(physics.miniX - physics.miniTargetX) > 0.3 || Math.abs(physics.miniY - physics.miniTargetY) > 0.3 || Math.abs(physics.miniVx) > 1.5 || Math.abs(physics.miniVy) > 1.5) active = true;
+        else { physics.miniX = physics.miniTargetX; physics.miniY = physics.miniTargetY; physics.miniVx = 0; physics.miniVy = 0; }
+      } else active = true;
+      applyGeometry();
+      return active;
+    }
+
+    function ensurePhysicsLoop() {
+      if (physics.rafId) return;
+      physics.lastTs = performance.now();
+      function tick(now) {
+        const dt = Math.min(0.032, (now - physics.lastTs) / 1000);
+        physics.lastTs = now;
+        if (stepSpring(dt) && physics.mode !== 'closed') physics.rafId = requestAnimationFrame(tick);
+        else physics.rafId = null;
+      }
+      physics.rafId = requestAnimationFrame(tick);
+    }
+
+    function springToExpanded(initialVel = 0) {
+      physics.mode = 'expanded';
+      physics.morphTarget = 0;
+      physics.morphVel = initialVel;
+      document.getElementById('descSheet').classList.add('hidden');
+      ensurePhysicsLoop();
+    }
+
+    function springToMinimized(initialMorphVel = 0, vx = 0, vy = 0) {
+      const d = getStageDims();
+      const target = getCornerTargets(d)[physics.cornerLabel] || getCornerTargets(d).BR;
+      physics.mode = 'minimized';
+      physics.morphTarget = 1;
+      physics.morphVel = initialMorphVel;
+      physics.miniTargetX = target.x;
+      physics.miniTargetY = target.y;
+      physics.miniVx = vx;
+      physics.miniVy = vy;
+      document.getElementById('descSheet').classList.add('hidden');
+      ensurePhysicsLoop();
+    }
+
+    videoEl.addEventListener('pointerdown', e => {
+      if (e.target.closest('button')) return;
+      videoEl.setPointerCapture(e.pointerId);
+      const now = performance.now();
+      physics.dragging = true;
+      physics.movedDist = 0;
+      physics.startX = e.clientX; physics.startY = e.clientY;
+      physics.startMorph = physics.morph;
+      physics.startMiniX = physics.miniX; physics.startMiniY = physics.miniY;
+      physics.dragType = physics.morph < 0.5 ? 'morph' : 'float';
+      physics.samples = [{ x: e.clientX, y: e.clientY, t: now }];
+      ensurePhysicsLoop();
+    });
+
+    videoEl.addEventListener('pointermove', e => {
+      if (!physics.dragging) return;
+      const now = performance.now();
+      const dx = e.clientX - physics.startX;
+      const dy = e.clientY - physics.startY;
+      physics.movedDist = Math.hypot(dx, dy);
+      recordVelocitySample(e.clientX, e.clientY, now);
+      const vel = computeVelocity();
+      physics.lastMeasuredVx = vel.vx; physics.lastMeasuredVy = vel.vy;
+
+      const d = getStageDims();
+      if (physics.dragType === 'morph') {
+        const travel = Math.max(240, d.h - d.fullH - 90);
+        let raw = physics.startMorph + dy / travel;
+        if (raw < 0) raw *= 0.18;
+        if (raw > 1) raw = 1 + (raw - 1) * 0.22;
+        physics.morph = raw;
+      } else {
+        physics.miniX = physics.startMiniX + dx;
+        physics.miniY = physics.startMiniY + dy;
+      }
+    });
+
+    function finishDrag() {
+      if (!physics.dragging) return;
+      physics.dragging = false;
+      const vel = computeVelocity();
+      physics.lastMeasuredVx = vel.vx; physics.lastMeasuredVy = vel.vy;
+      const d = getStageDims();
+
+      if (physics.movedDist < 8) {
+        if (physics.mode === 'minimized') springToExpanded(-1.4);
+        return;
+      }
+      if (physics.dragType === 'morph') {
+        const travel = Math.max(240, d.h - d.fullH - 90);
+        if (vel.vy > 420 || (physics.morph > 0.34 && vel.vy > -250)) {
+          springToMinimized(Math.max(0.8, vel.vy / travel));
+        } else {
+          springToExpanded(Math.min(-0.8, vel.vy / travel));
+        }
+      } else {
+        if (physics.miniX < -d.miniW * 0.42 || vel.vx < -1100 || physics.miniX > d.w - d.miniW * 0.58 || vel.vx > 1100) {
+          closePlayer();
+          showToast('Mini-player dismissed');
+          return;
+        }
+        const snap = pickNearestCorner(physics.miniX + vel.vx * 0.18, physics.miniY + vel.vy * 0.18, d);
+        physics.cornerLabel = snap.key;
+        physics.miniTargetX = snap.x; physics.miniTargetY = snap.y;
+        physics.miniVx = vel.vx * 0.65; physics.miniVy = vel.vy * 0.65;
+        ensurePhysicsLoop();
+      }
+    }
+    videoEl.addEventListener('pointerup', finishDrag);
+    videoEl.addEventListener('pointercancel', finishDrag);
+
+    let lastTapTs = 0;
+    videoEl.addEventListener('click', e => {
+      if (e.target.closest('button') || physics.mode !== 'expanded') return;
+      const now = performance.now();
+      if (now - lastTapTs < 280) {
+        state.progressPct = Math.min(98, state.progressPct + 6);
+        updatePlaybackUI();
+        const badge = document.getElementById('seekFlashBadge');
+        badge.classList.remove('hidden', 'seek-flash');
+        void badge.offsetWidth;
+        badge.classList.add('seek-flash');
+        setTimeout(() => badge.classList.add('hidden'), 560);
+      }
+      lastTapTs = now;
+    });
+
+    // ---- Player State ----
+    let playbackTimer = null;
+    function openVideo(video) {
+      state.currentVideo = video;
+      state.isPlaying = true;
+      state.progressPct = video.progressInit || 14;
+      if (!video.ytId) state.history = [video.id, ...state.history.filter(x => x !== video.id)];
+
+      const d = getStageDims();
+      const br = getCornerTargets(d).BR;
+      physics.cornerLabel = 'BR';
+      physics.miniX = br.x; physics.miniY = br.y;
+      physics.miniTargetX = br.x; physics.miniTargetY = br.y;
+
+      videoEl.classList.remove('hidden');
+      watchBackdrop.classList.remove('hidden');
+      watchDetails.classList.remove('hidden');
+
+      const ytFrame = document.getElementById('vYoutubeFrame');
+      const vThumb = document.getElementById('vThumb');
+      if (video.ytId) {
+        ytFrame.src = `https://www.youtube.com/embed/${video.ytId}?autoplay=1&rel=0&modestbranding=1`;
+        ytFrame.classList.remove('hidden');
+        vThumb.classList.add('hidden');
+      } else {
+        ytFrame.src = '';
+        ytFrame.classList.add('hidden');
+        vThumb.src = video.thumb;
+        vThumb.classList.remove('hidden');
+      }
+
+      renderWatchDetails();
+      physics.morph = 0.85;
+      springToExpanded(-2.4);
+
+      if (playbackTimer) clearInterval(playbackTimer);
+      playbackTimer = setInterval(() => {
+        if (!state.isPlaying || !state.currentVideo || state.currentVideo.ytId) return;
+        state.progressPct = Math.min(100, state.progressPct + (100 / state.currentVideo.durationSec) * SPEEDS[state.speedIdx] * 0.5);
+        if (state.sponsorBlock && state.progressPct >= 38 && state.progressPct < 48) {
+          state.progressPct = 48.5;
+          showToast('SponsorBlock skipped sponsor segment');
+        }
+        if (state.progressPct >= 100) state.isPlaying = false;
+        updatePlaybackUI();
+      }, 500);
+      updatePlaybackUI();
+    }
+
+    function closePlayer() {
+      physics.mode = 'closed';
+      state.isPlaying = false;
+      state.currentVideo = null;
+      if (playbackTimer) clearInterval(playbackTimer);
+      document.getElementById('vYoutubeFrame').src = '';
+      videoEl.classList.add('hidden');
+      watchBackdrop.classList.add('hidden');
+      watchDetails.classList.add('hidden');
+      document.getElementById('descSheet').classList.add('hidden');
+      updateHud();
+    }
+
+    function formatTime(sec) {
+      return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+    }
+    function formatCount(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n); }
+
+    function updatePlaybackUI() {
+      if (!state.currentVideo) return;
+      const cur = (state.progressPct / 100) * state.currentVideo.durationSec;
+      document.getElementById('vProgressFill').style.width = `${state.progressPct}%`;
+      document.getElementById('vSponsorBar').classList.toggle('hidden', !state.sponsorBlock);
+      document.getElementById('vTimeLabel').textContent = `${formatTime(cur)} / ${state.currentVideo.duration}`;
+      document.getElementById('vPlayBtn').innerHTML = `<i data-lucide="${state.isPlaying ? 'pause' : 'play'}" class="w-5 h-5"></i>`;
+      document.getElementById('vSpeedBtn').textContent = `${SPEEDS[state.speedIdx]}x`;
+      lucide.createIcons();
+    }
+
+    function renderWatchDetails() {
+      const v = state.currentVideo;
+      if (!v) return;
+      document.getElementById('wTitle').textContent = v.title;
+      document.getElementById('wMetaText').textContent = `${v.views} • ${v.age}`;
+      document.getElementById('wChannel').textContent = v.channel;
+      document.getElementById('wSubs').textContent = v.subs;
+      const av = document.getElementById('wAvatar');
+      av.className = `w-9 h-9 rounded-full ${v.avatarColor} flex items-center justify-center text-xs font-bold text-white shrink-0`;
+      av.textContent = v.avatar;
+
+      const isSub = state.subs.has(v.channel);
+      const subBtn = document.getElementById('wSubBtn');
+      subBtn.textContent = isSub ? 'Subscribed' : 'Subscribe';
+      subBtn.className = `px-4 py-1.5 rounded-full text-xs font-bold transition shrink-0 ${isSub ? 'yt-elevated yt-text' : 'yt-accent-bg'}`;
+
+      const liked = state.liked.has(v.id);
+      const disliked = state.disliked.has(v.id);
+      document.getElementById('wLikeCount').textContent = formatCount(v.likes + (liked ? 1 : 0));
+      document.getElementById('wDislikeCount').textContent = state.returnDislike ? formatCount(v.dislikes + (disliked ? 1 : 0)) : '—';
+      document.getElementById('wLikeBtn').className = `px-3.5 py-2 flex items-center gap-1.5 text-xs font-semibold transition ${liked ? 'yt-accent' : 'yt-text'}`;
+      document.getElementById('wDislikeBtn').className = `px-3 py-2 flex items-center gap-1.5 text-xs font-medium transition ${disliked ? 'yt-accent' : 'yt-muted'}`;
+      document.getElementById('wDownloadText').textContent = state.downloads.has(v.id) ? 'Saved' : 'Download';
+      document.getElementById('wTopComment').textContent = v.topComment;
+
+      document.getElementById('wRelatedList').innerHTML = VIDEOS.filter(x => x.id !== v.id).map(r => `
+        <div data-open-id="${r.id}" class="flex gap-2.5 cursor-pointer">
+          <div class="relative w-36 aspect-video rounded-xl overflow-hidden bg-black shrink-0">
+            <img src="${r.thumb}" alt="${r.title}" class="w-full h-full object-cover" />
+            <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">${r.duration}</span>
+          </div>
+          <div class="min-w-0 flex-1 py-0.5">
+            <p class="text-xs font-semibold yt-text line-clamp-2 leading-snug">${r.title}</p>
+            <p class="text-[11px] yt-muted mt-1 truncate">${r.channel}</p>
+            <p class="text-[10px] yt-muted">${r.views} • ${r.age}</p>
+          </div>
+        </div>
+      `).join('');
+
+      document.querySelectorAll('#wRelatedList [data-open-id]').forEach(el => {
+        el.addEventListener('click', () => {
+          const next = VIDEOS.find(x => x.id === el.dataset.openId);
+          if (next) openVideo(next);
+        });
+      });
+      lucide.createIcons();
+    }
+
+    // ---- Video Card Markup (Exact YouTube Mobile) ----
+    function ytVideoCardHTML(v) {
+      return `
+        <article class="pb-4">
+          <div data-open-id="${v.id}" class="relative w-full aspect-video bg-black overflow-hidden cursor-pointer">
+            <img src="${v.thumb}" alt="${v.title}" class="w-full h-full object-cover" />
+            <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/85 text-[11px] font-mono font-semibold text-white">${v.duration}</span>
+            ${v.progressInit ? `<div class="absolute bottom-0 left-0 h-[3px]" style="width:${v.progressInit}%; background:var(--accent);"></div>` : ''}
+          </div>
+          <div class="px-3 pt-2.5 flex gap-3 items-start">
+            <div data-open-id="${v.id}" class="w-9 h-9 rounded-full ${v.avatarColor} flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5 cursor-pointer">${v.avatar}</div>
+            <div data-open-id="${v.id}" class="min-w-0 flex-1 cursor-pointer">
+              <h2 class="text-[14.5px] font-semibold yt-text leading-snug line-clamp-2">${v.title}</h2>
+              <p class="text-[12px] yt-muted mt-0.5 truncate">${v.channel} • ${v.views} • ${v.age}</p>
+            </div>
+            <button data-menu-id="${v.id}" class="p-1 -mr-1 rounded-full yt-muted hover:opacity-80 shrink-0">
+              <i data-lucide="more-vertical" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </article>
+      `;
+    }
+
+    // ---- Tab Renderers ----
+    function renderHomeTab() {
+      const chips = CATS.map(c => {
+        const active = c === state.cat;
+        return `<button data-cat="${c}" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition" style="${
+          active ? 'background:var(--chip-active-bg);color:var(--chip-active-text);' : 'background:var(--elevated);color:var(--text);'
+        }">${c}</button>`;
+      }).join('');
+
+      const items = VIDEOS.filter(v => state.cat === 'All' || v.cat === state.cat);
+      const firstTwo = items.slice(0, 2).map(ytVideoCardHTML).join('');
+      const rest = items.slice(2).map(ytVideoCardHTML).join('');
+
+      const shortsShelf = !state.hideShorts ? `
+        <section class="py-3 border-y yt-border my-1">
+          <div class="px-3.5 pb-2.5 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="zap" class="w-4 h-4 yt-accent"></i>
+              <span class="text-sm font-bold yt-text">Shorts</span>
+            </div>
+            <button id="openAllShortsBtn" class="text-xs font-semibold yt-accent">View all</button>
+          </div>
+          <div class="flex gap-2.5 px-3 overflow-x-auto no-scrollbar">
+            ${SHORTS.map((s, idx) => `
+              <div data-short-idx="${idx}" class="shrink-0 w-36 aspect-[9/15] rounded-xl overflow-hidden relative bg-black cursor-pointer">
+                <img src="${s.thumb}" alt="${s.title}" class="w-full h-full object-cover" />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
+                <div class="absolute bottom-2 inset-x-2">
+                  <p class="text-[11px] font-semibold text-white line-clamp-2 leading-tight">${s.title}</p>
+                  <p class="text-[10px] text-gray-300 mt-0.5">${s.views}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </section>
+      ` : '';
+
+      return `
+        <div class="flex items-center gap-2 px-3 py-2.5 overflow-x-auto no-scrollbar sticky top-0 yt-bg z-10 border-b yt-border">
+          ${chips}
+        </div>
+        <div class="pb-20">${firstTwo}${shortsShelf}${rest}</div>
+      `;
+    }
+
+    function renderShortsTab() {
+      const s = SHORTS[state.shortIdx];
+      return `
+        <div class="relative w-full h-[calc(100vh-6.5rem)] max-h-[740px] bg-black overflow-hidden">
+          <img src="${s.thumb}" alt="${s.title}" class="w-full h-full object-cover opacity-90" />
+          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30"></div>
+
+          <!-- Top Shorts Nav -->
+          <div class="absolute top-3 inset-x-3 flex items-center justify-between text-white">
+            <span class="font-bold text-base">Shorts</span>
+            <div class="flex items-center gap-1.5">
+              <button id="prevShortBtn" class="px-2.5 py-1 rounded-full bg-black/50 text-xs font-semibold">↑ Prev</button>
+              <button id="nextShortBtn" class="px-2.5 py-1 rounded-full bg-black/50 text-xs font-semibold">Next ↓</button>
+            </div>
+          </div>
+
+          <!-- Right Action Column -->
+          <div class="absolute right-3 bottom-20 flex flex-col items-center gap-4 text-white">
+            <button id="shortLikeBtn" class="flex flex-col items-center gap-1">
+              <div class="w-10 h-10 rounded-full bg-black/45 flex items-center justify-center"><i data-lucide="thumbs-up" class="w-5 h-5"></i></div>
+              <span class="text-[11px] font-semibold">${s.likes}</span>
+            </button>
+            <button id="shortCommentBtn" class="flex flex-col items-center gap-1">
+              <div class="w-10 h-10 rounded-full bg-black/45 flex items-center justify-center"><i data-lucide="message-square" class="w-5 h-5"></i></div>
+              <span class="text-[11px] font-semibold">412</span>
+            </button>
+            <button id="shortShareBtn" class="flex flex-col items-center gap-1">
+              <div class="w-10 h-10 rounded-full bg-black/45 flex items-center justify-center"><i data-lucide="share-2" class="w-5 h-5"></i></div>
+              <span class="text-[11px] font-semibold">Share</span>
+            </button>
+          </div>
+
+          <!-- Bottom Caption -->
+          <div class="absolute left-3 right-16 bottom-6 space-y-2 text-white">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-full yt-accent-bg flex items-center justify-center text-xs font-bold">${s.channel.slice(1,3).toUpperCase()}</div>
+              <span class="text-xs font-bold">${s.channel}</span>
+              <button id="shortSubBtn" class="px-3 py-1 rounded-full text-[11px] font-bold yt-accent-bg">Subscribe</button>
+            </div>
+            <p class="text-sm font-medium leading-snug">${s.title}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSubsTab() {
+      const channels = [
+        { name: 'DevForge Labs', avatar: 'DF', color: 'bg-amber-600' },
+        { name: 'Frames of Bengal', avatar: 'FB', color: 'bg-orange-600' },
+        { name: 'Minimal Tech Daily', avatar: 'MT', color: 'bg-emerald-600' },
+        { name: 'EarthLens 4K', avatar: 'EL', color: 'bg-sky-600' }
+      ];
+      const items = VIDEOS.filter(v => state.subs.has(v.channel) && (!state.subFilter || v.channel === state.subFilter));
+      return `
+        <div class="px-3 py-3 flex items-center gap-3 overflow-x-auto no-scrollbar border-b yt-border">
+          <button data-sub-filter="" class="shrink-0 flex flex-col items-center gap-1">
+            <div class="w-12 h-12 rounded-full flex items-center justify-center text-xs font-bold border-2 ${!state.subFilter ? 'yt-accent-bg' : 'yt-elevated yt-text'}" style="border-color: var(--accent);">All</div>
+            <span class="text-[10px] yt-muted">All</span>
+          </button>
+          ${channels.filter(c => state.subs.has(c.name)).map(c => `
+            <button data-sub-filter="${c.name}" class="shrink-0 flex flex-col items-center gap-1">
+              <div class="relative w-12 h-12 rounded-full ${c.color} flex items-center justify-center text-xs font-bold text-white ${state.subFilter === c.name ? 'ring-2 ring-amber-400' : ''}">
+                ${c.avatar}
+                <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-black" style="background: var(--accent);"></span>
+              </div>
+              <span class="text-[10px] yt-muted max-w-[54px] truncate">${c.name.split(' ')[0]}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="pb-20 pt-2">
+          ${items.length ? items.map(ytVideoCardHTML).join('') : `<p class="py-16 text-center text-xs yt-muted">Subscribe to channels to see their latest videos.</p>`}
+        </div>
+      `;
+    }
+
+    function renderYouTab() {
+      const histVideos = state.history.map(id => VIDEOS.find(v => v.id === id)).filter(Boolean);
+      return `
+        <div class="p-4 pb-24 space-y-5">
+          <!-- Profile Row -->
+          <div class="flex items-center gap-3.5">
+            <div class="w-14 h-14 rounded-full yt-accent-bg flex items-center justify-center text-lg font-extrabold shrink-0">BT</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="text-base font-bold yt-text">${state.isLoggedIn ? 'BilaiTube User' : 'Guest Mode'}</h2>
+              <p class="text-xs yt-muted">${state.isLoggedIn ? 'Synced via local SAPISID cookie' : '100% Local SQLite • Zero Server'}</p>
+            </div>
+            <button id="youLoginBtn" class="px-3.5 py-1.5 rounded-full text-xs font-bold yt-elevated yt-text">${state.isLoggedIn ? 'Sign Out' : 'Sign In'}</button>
+          </div>
+
+          <!-- Quick Appearance Pills -->
+          <div class="flex gap-2 overflow-x-auto no-scrollbar">
+            <button id="youThemeBtn" class="shrink-0 px-3 py-1.5 rounded-full yt-elevated text-xs font-semibold yt-text flex items-center gap-1.5">
+              <i data-lucide="${state.dark ? 'sun' : 'moon'}" class="w-3.5 h-3.5"></i>
+              <span>${state.dark ? 'Switch to Light' : 'Switch to Dark'}</span>
+            </button>
+            <button id="youAccentBtn" class="shrink-0 px-3 py-1.5 rounded-full yt-accent-soft text-xs font-semibold flex items-center gap-1.5">
+              <i data-lucide="palette" class="w-3.5 h-3.5"></i>
+              <span>${state.accentMode === 'amber' ? 'Warm Amber' : 'Classic Red'}</span>
+            </button>
+            <button id="youHudBtn" class="shrink-0 px-3 py-1.5 rounded-full yt-elevated text-xs font-semibold yt-text flex items-center gap-1.5">
+              <i data-lucide="activity" class="w-3.5 h-3.5 yt-accent"></i>
+              <span>Physics HUD: ${state.hudVisible ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
+
+          <!-- History Carousel -->
+          <div class="space-y-2.5">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold yt-text">History</h3>
+              <span class="text-xs yt-muted">${histVideos.length} watched</span>
+            </div>
+            <div class="flex gap-2.5 overflow-x-auto no-scrollbar">
+              ${histVideos.map(v => `
+                <div data-open-id="${v.id}" class="shrink-0 w-36 cursor-pointer">
+                  <div class="relative aspect-video rounded-xl overflow-hidden bg-black">
+                    <img src="${v.thumb}" alt="${v.title}" class="w-full h-full object-cover" />
+                    <span class="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-[9px] font-mono text-white">${v.duration}</span>
+                  </div>
+                  <p class="text-[11px] font-semibold yt-text line-clamp-2 mt-1 leading-tight">${v.title}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Local Library & Open-Source Toggles -->
+          <div class="rounded-2xl yt-elevated divide-y yt-border overflow-hidden">
+            <div class="px-4 py-3 flex items-center justify-between text-xs">
+              <div class="flex items-center gap-3 yt-text font-medium"><i data-lucide="download" class="w-4 h-4 yt-accent"></i><span>Offline Downloads</span></div>
+              <span class="font-bold yt-muted">${state.downloads.size} videos</span>
+            </div>
+            <div class="px-4 py-3 flex items-center justify-between text-xs">
+              <div class="flex items-center gap-3 yt-text font-medium"><i data-lucide="clock" class="w-4 h-4 yt-accent"></i><span>Watch Later</span></div>
+              <span class="font-bold yt-muted">${state.watchLater.size} videos</span>
+            </div>
+            <button id="toggleSponsorBtn" class="w-full px-4 py-3 flex items-center justify-between text-xs">
+              <span class="yt-text font-medium">SponsorBlock Auto-Skip</span>
+              <span class="font-bold ${state.sponsorBlock ? 'text-emerald-500' : 'yt-muted'}">${state.sponsorBlock ? 'ON' : 'OFF'}</span>
+            </button>
+            <button id="toggleRydBtn" class="w-full px-4 py-3 flex items-center justify-between text-xs">
+              <span class="yt-text font-medium">Return YouTube Dislike</span>
+              <span class="font-bold ${state.returnDislike ? 'text-emerald-500' : 'yt-muted'}">${state.returnDislike ? 'ON' : 'OFF'}</span>
+            </button>
+            <button id="toggleShortsBtn" class="w-full px-4 py-3 flex items-center justify-between text-xs">
+              <span class="yt-text font-medium">Hide Shorts from Home</span>
+              <span class="font-bold ${state.hideShorts ? 'text-emerald-500' : 'yt-muted'}">${state.hideShorts ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function applyThemeClasses() {
+      document.documentElement.classList.toggle('dark', state.dark);
+      document.documentElement.classList.toggle('theme-red', state.accentMode === 'red');
+      document.getElementById('themeToggleBtn').innerHTML = `<i data-lucide="${state.dark ? 'sun' : 'moon'}" class="w-[19px] h-[19px]"></i>`;
+      lucide.createIcons();
+    }
+
+    function renderActiveTab() {
+      applyThemeClasses();
+      const root = document.getElementById('tabViewRoot');
+      if (state.tab === 'home') root.innerHTML = renderHomeTab();
+      else if (state.tab === 'shorts') root.innerHTML = renderShortsTab();
+      else if (state.tab === 'subs') root.innerHTML = renderSubsTab();
+      else root.innerHTML = renderYouTab();
+
+      // Highlight active bottom tab
+      document.querySelectorAll('.btab-btn').forEach(b => {
+        const active = b.dataset.btab === state.tab;
+        b.style.color = active ? 'var(--accent)' : 'var(--muted)';
+        b.querySelector('span').className = `text-[10px] ${active ? 'font-bold' : 'font-medium'}`;
+      });
+
+      bindTabEvents();
+      lucide.createIcons();
+    }
+
+    function bindTabEvents() {
+      document.querySelectorAll('#tabViewRoot [data-cat]').forEach(b => {
+        b.addEventListener('click', () => { state.cat = b.dataset.cat; renderActiveTab(); });
+      });
+      document.querySelectorAll('#tabViewRoot [data-open-id]').forEach(el => {
+        el.addEventListener('click', () => {
+          const v = VIDEOS.find(x => x.id === el.dataset.openId);
+          if (v) openVideo(v);
+        });
+      });
+      document.querySelectorAll('#tabViewRoot [data-menu-id]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          state.menuVideoId = btn.dataset.menuId;
+          document.getElementById('videoMenuSheet').classList.remove('hidden');
+        });
+      });
+      document.querySelectorAll('#tabViewRoot [data-short-idx]').forEach(el => {
+        el.addEventListener('click', () => { state.shortIdx = Number(el.dataset.shortIdx); state.tab = 'shorts'; renderActiveTab(); });
+      });
+      const openAllShorts = document.getElementById('openAllShortsBtn');
+      if (openAllShorts) openAllShorts.addEventListener('click', () => { state.tab = 'shorts'; renderActiveTab(); });
+
+      const prevShort = document.getElementById('prevShortBtn');
+      const nextShort = document.getElementById('nextShortBtn');
+      if (prevShort) prevShort.addEventListener('click', () => { state.shortIdx = (state.shortIdx - 1 + SHORTS.length) % SHORTS.length; renderActiveTab(); });
+      if (nextShort) nextShort.addEventListener('click', () => { state.shortIdx = (state.shortIdx + 1) % SHORTS.length; renderActiveTab(); });
+      const shortLike = document.getElementById('shortLikeBtn');
+      if (shortLike) shortLike.addEventListener('click', () => showToast('Liked Short'));
+      const shortComment = document.getElementById('shortCommentBtn');
+      if (shortComment) shortComment.addEventListener('click', () => showToast('412 Comments'));
+      const shortShare = document.getElementById('shortShareBtn');
+      if (shortShare) shortShare.addEventListener('click', () => showToast('Short link copied'));
+      const shortSub = document.getElementById('shortSubBtn');
+      if (shortSub) shortSub.addEventListener('click', () => showToast('Subscribed!'));
+
+      document.querySelectorAll('#tabViewRoot [data-sub-filter]').forEach(b => {
+        b.addEventListener('click', () => { state.subFilter = b.dataset.subFilter || null; renderActiveTab(); });
+      });
+
+      const youLogin = document.getElementById('youLoginBtn');
+      if (youLogin) youLogin.addEventListener('click', () => { state.isLoggedIn = !state.isLoggedIn; showToast(state.isLoggedIn ? 'Synced with local cookie' : 'Switched to Guest Mode'); renderActiveTab(); });
+      const youTheme = document.getElementById('youThemeBtn');
+      if (youTheme) youTheme.addEventListener('click', () => { state.dark = !state.dark; renderActiveTab(); });
+      const youAccent = document.getElementById('youAccentBtn');
+      if (youAccent) youAccent.addEventListener('click', () => { state.accentMode = state.accentMode === 'amber' ? 'red' : 'amber'; renderActiveTab(); });
+      const youHud = document.getElementById('youHudBtn');
+      if (youHud) youHud.addEventListener('click', () => { state.hudVisible = !state.hudVisible; document.getElementById('physicsHud').classList.toggle('hidden', !state.hudVisible); renderActiveTab(); });
+
+      const tSp = document.getElementById('toggleSponsorBtn');
+      if (tSp) tSp.addEventListener('click', () => { state.sponsorBlock = !state.sponsorBlock; renderActiveTab(); });
+      const tRyd = document.getElementById('toggleRydBtn');
+      if (tRyd) tRyd.addEventListener('click', () => { state.returnDislike = !state.returnDislike; renderActiveTab(); if (state.currentVideo) renderWatchDetails(); });
+      const tSh = document.getElementById('toggleShortsBtn');
+      if (tSh) tSh.addEventListener('click', () => { state.hideShorts = !state.hideShorts; renderActiveTab(); });
+    }
+
+    // ---- Search Overlay ----
+    function renderSearchResults(q) {
+      const root = document.getElementById('searchResultsRoot');
+      const term = q.trim().toLowerCase();
+      const matches = VIDEOS.filter(v => !term || v.title.toLowerCase().includes(term) || v.channel.toLowerCase().includes(term));
+      root.innerHTML = matches.map(v => `
+        <div data-s-open="${v.id}" class="flex gap-2.5 cursor-pointer">
+          <div class="relative w-36 aspect-video rounded-xl overflow-hidden bg-black shrink-0">
+            <img src="${v.thumb}" alt="${v.title}" class="w-full h-full object-cover" />
+            <span class="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">${v.duration}</span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-semibold yt-text line-clamp-2">${v.title}</p>
+            <p class="text-[11px] yt-muted mt-1">${v.channel} • ${v.views}</p>
+          </div>
+        </div>
+      `).join('');
+      root.querySelectorAll('[data-s-open]').forEach(el => {
+        el.addEventListener('click', () => {
+          document.getElementById('searchOverlay').classList.add('hidden');
+          const v = VIDEOS.find(x => x.id === el.dataset.sOpen);
+          if (v) openVideo(v);
+        });
+      });
+    }
+
+    function openSheet(mode) {
+      const v = state.currentVideo;
+      if (!v) return;
+      document.getElementById('sheetHeading').textContent = mode === 'desc' ? 'Description' : 'Comments (1.2K)';
+      const body = document.getElementById('descSheetBody');
+      if (mode === 'desc') {
+        body.innerHTML = `
+          <h3 class="text-sm font-bold yt-text">${v.title}</h3>
+          <div class="grid grid-cols-3 gap-2 text-center py-2.5 rounded-xl yt-elevated">
+            <div><div class="text-sm font-bold yt-accent">${formatCount(v.likes)}</div><div class="text-[10px] yt-muted">Likes</div></div>
+            <div><div class="text-sm font-bold yt-text">${v.views.replace(' views','')}</div><div class="text-[10px] yt-muted">Views</div></div>
+            <div><div class="text-sm font-bold yt-text">${v.date}</div><div class="text-[10px] yt-muted">Published</div></div>
+          </div>
+          <p class="whitespace-pre-line yt-text opacity-90">${v.description}</p>
+        `;
+      } else {
+        body.innerHTML = `
+          <div class="space-y-3.5">
+            <div class="flex gap-2.5">
+              <div class="w-7 h-7 rounded-full yt-accent-bg flex items-center justify-center text-[10px] font-bold shrink-0">AR</div>
+              <div>
+                <p class="text-[11px] font-semibold yt-muted">@arif_dev • 5 hours ago</p>
+                <p class="text-xs yt-text mt-0.5">${v.topComment}</p>
+              </div>
+            </div>
+            <div class="flex gap-2.5">
+              <div class="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">MK</div>
+              <div>
+                <p class="text-[11px] font-semibold yt-muted">@mahin_bd • 1 day ago</p>
+                <p class="text-xs yt-text mt-0.5">Light Mode &amp; Dark Mode both look 100% like native YouTube!</p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      document.getElementById('descSheet').classList.remove('hidden');
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.remove('hidden');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.add('hidden'), 2200);
+    }
+
+    function extractYouTubeId(url) {
+      const m = url.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
+      return m ? m[1] : null;
+    }
+
+    // ---- Static Listeners ----
+    document.querySelectorAll('.btab-btn').forEach(b => {
+      b.addEventListener('click', () => { state.tab = b.dataset.btab; renderActiveTab(); });
+    });
+    document.getElementById('brandHomeBtn').addEventListener('click', () => { state.tab = 'home'; state.cat = 'All'; renderActiveTab(); });
+    document.getElementById('themeToggleBtn').addEventListener('click', () => {
+      state.dark = !state.dark;
+      renderActiveTab();
+      showToast(state.dark ? 'Dark Mode' : 'Light Mode');
+    });
+    document.getElementById('accentToggleBtn').addEventListener('click', () => {
+      state.accentMode = state.accentMode === 'amber' ? 'red' : 'amber';
+      renderActiveTab();
+      showToast(state.accentMode === 'amber' ? 'BilaiTube Warm Amber' : 'Classic YouTube Red');
+    });
+    document.getElementById('notifBtn').addEventListener('click', () => showToast('2 new uploads from DevForge Labs & Frames of Bengal'));
+
+    document.getElementById('searchOpenBtn').addEventListener('click', () => {
+      document.getElementById('searchOverlay').classList.remove('hidden');
+      document.getElementById('searchInput').focus();
+      renderSearchResults(document.getElementById('searchInput').value);
+    });
+    document.getElementById('searchCloseBtn').addEventListener('click', () => document.getElementById('searchOverlay').classList.add('hidden'));
+    document.getElementById('searchInput').addEventListener('input', e => {
+      document.getElementById('searchClearBtn').classList.toggle('hidden', !e.target.value);
+      renderSearchResults(e.target.value);
+    });
+    document.getElementById('searchClearBtn').addEventListener('click', () => {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('searchClearBtn').classList.add('hidden');
+      renderSearchResults('');
+    });
+
+    // Video menu sheet
+    document.getElementById('menuCloseBtn').addEventListener('click', () => document.getElementById('videoMenuSheet').classList.add('hidden'));
+    document.getElementById('menuWatchLaterBtn').addEventListener('click', () => {
+      if (state.menuVideoId) state.watchLater.add(state.menuVideoId);
+      document.getElementById('videoMenuSheet').classList.add('hidden');
+      showToast('Saved to Watch Later');
+    });
+    document.getElementById('menuDownloadBtn').addEventListener('click', () => {
+      if (state.menuVideoId) state.downloads.add(state.menuVideoId);
+      document.getElementById('videoMenuSheet').classList.add('hidden');
+      showToast('Saved to Offline Downloads');
+    });
+    document.getElementById('menuShareBtn').addEventListener('click', () => {
+      document.getElementById('videoMenuSheet').classList.add('hidden');
+      showToast('Video link copied');
+    });
+
+    // Player controls
+    document.getElementById('vDownBtn').addEventListener('click', () => springToMinimized(2.5));
+    document.getElementById('wMiniQuickBtn').addEventListener('click', () => springToMinimized(2.5));
+    document.getElementById('vMiniCloseBtn').addEventListener('click', closePlayer);
+    document.getElementById('vPlayBtn').addEventListener('click', () => { state.isPlaying = !state.isPlaying; updatePlaybackUI(); });
+    document.getElementById('vSpeedBtn').addEventListener('click', () => { state.speedIdx = (state.speedIdx + 1) % SPEEDS.length; updatePlaybackUI(); });
+    document.getElementById('descTrigger').addEventListener('click', () => openSheet('desc'));
+    document.getElementById('commentsPreviewCard').addEventListener('click', () => openSheet('comments'));
+    document.getElementById('closeDescSheetBtn').addEventListener('click', () => document.getElementById('descSheet').classList.add('hidden'));
+
+    document.getElementById('wSubBtn').addEventListener('click', () => {
+      if (!state.currentVideo) return;
+      const ch = state.currentVideo.channel;
+      if (state.subs.has(ch)) state.subs.delete(ch); else state.subs.add(ch);
+      renderWatchDetails();
+      showToast(state.subs.has(ch) ? `Subscribed to ${ch}` : `Unsubscribed`);
+    });
+    document.getElementById('wLikeBtn').addEventListener('click', () => {
+      if (!state.currentVideo) return;
+      const id = state.currentVideo.id;
+      if (state.liked.has(id)) state.liked.delete(id); else { state.liked.add(id); state.disliked.delete(id); }
+      renderWatchDetails();
+    });
+    document.getElementById('wDislikeBtn').addEventListener('click', () => {
+      if (!state.currentVideo) return;
+      const id = state.currentVideo.id;
+      if (state.disliked.has(id)) state.disliked.delete(id); else { state.disliked.add(id); state.liked.delete(id); }
+      renderWatchDetails();
+    });
+    document.getElementById('wDownloadBtn').addEventListener('click', () => {
+      if (!state.currentVideo) return;
+      const id = state.currentVideo.id;
+      if (state.downloads.has(id)) state.downloads.delete(id); else state.downloads.add(id);
+      renderWatchDetails();
+      showToast(state.downloads.has(id) ? 'Saved offline' : 'Removed download');
+    });
+    document.getElementById('wShareBtn').addEventListener('click', () => showToast('Link copied'));
+
+    document.getElementById('hudToggleBtn').addEventListener('click', () => {
+      state.hudVisible = !state.hudVisible;
+      document.getElementById('physicsHud').classList.toggle('hidden', !state.hudVisible);
+      updateHud();
+    });
+    document.getElementById('closeHudBtn').addEventListener('click', () => {
+      state.hudVisible = false;
+      document.getElementById('physicsHud').classList.add('hidden');
+    });
+    document.getElementById('kSlider').addEventListener('input', e => {
+      physics.stiffness = Number(e.target.value);
+      document.getElementById('kVal').textContent = physics.stiffness;
+    });
+    document.getElementById('cSlider').addEventListener('input', e => {
+      physics.damping = Number(e.target.value);
+      document.getElementById('cVal').textContent = physics.damping;
+    });
+
+    // URL Loader
+    document.getElementById('urlModalOpenBtn').addEventListener('click', () => document.getElementById('urlModal').classList.remove('hidden'));
+    document.getElementById('closeUrlModalBtn').addEventListener('click', () => document.getElementById('urlModal').classList.add('hidden'));
+    document.getElementById('cancelUrlBtn').addEventListener('click', () => document.getElementById('urlModal').classList.add('hidden'));
+    document.getElementById('loadUrlBtn').addEventListener('click', () => {
+      const ytId = extractYouTubeId(document.getElementById('ytUrlInput').value.trim());
+      if (!ytId) { showToast('Valid YouTube URL দাও'); return; }
+      document.getElementById('urlModal').classList.add('hidden');
+      openVideo({
+        id: 'yt_' + ytId, ytId, title: `YouTube Video (${ytId})`,
+        channel: 'YouTube Direct', subs: 'Live Stream', avatarColor: 'bg-amber-600', avatar: 'YT',
+        views: 'Live', date: '2026', age: 'Just now', durationSec: 600, duration: 'Live', cat: 'All',
+        likes: 1200, dislikes: 10, topComment: 'Drag down on the top handle bar to float this video!',
+        description: `Loaded from https://www.youtube.com/watch?v=${ytId}`, thumb: VIDEOS[0].thumb
+      });
+    });
+
+    // Init on Home screen so the full YouTube Home UI (Light/Dark) shines immediately!
+    renderActiveTab();
+  </script>
+</body>
+</html>
