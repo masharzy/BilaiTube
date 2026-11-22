@@ -149,5 +149,11 @@ if adb shell pm list features | grep -q android.software.picture_in_picture; the
   adb logcat -d -s BilaiPip:I > "$out/pip_callback.txt"
   grep -q 'Mode changed: false' "$out/pip_callback.txt"
 fi
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  -a com.masharzy.bilaitube.DEBUG_PLAY --es bt.uri fixture --ez bt.offline true
+sleep 2
+dump_ui "$out/offline_playback.xml" 'Offline sample'
+if grep -q "Couldn't play" "$out/offline_playback.xml"; then exit 1; fi
+adb exec-out screencap -p > "$out/offline_playback.png"
 adb logcat -d -v time > "$out/logcat.txt"
 adb shell dumpsys gfxinfo "$pkg" > "$out/gfxinfo.txt"

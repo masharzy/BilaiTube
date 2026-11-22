@@ -177,7 +177,7 @@ internal fun SearchPage(close: () -> Unit, play: (String, String) -> Unit,
 
 @Composable
 internal fun ChannelPage(url: String, title: String, close: () -> Unit,
-                         play: (String, String) -> Unit, playlist: (String, String) -> Unit, onSignIn: () -> Unit) {
+                         play: (String, String) -> Unit, playlist: (String, String) -> Unit, subscribed: Boolean, onSubscribe: () -> Unit) {
     val p = LocalBilaiColors.current
     var info by remember(url) { mutableStateOf<org.schabi.newpipe.extractor.channel.ChannelInfo?>(null) }
     var entries by remember(url) { mutableStateOf<List<InfoItem>>(emptyList()) }
@@ -207,7 +207,7 @@ internal fun ChannelPage(url: String, title: String, close: () -> Unit,
                         FeedText(channel?.name ?: title, 16, p.text, FontWeight.Bold)
                         channel?.subscriberCount?.takeIf { it >= 0 }?.let { FeedText("$it subscribers", 12, p.muted) }
                     }
-                    WatchPill("Subscribe", p.onAccent, p.accent, click = onSignIn)
+                    WatchPill(if (subscribed) "Subscribed" else "Subscribe", p.onAccent, p.accent, click = onSubscribe)
                 }
             }
             item {
@@ -291,24 +291,47 @@ internal fun RemotePlaylistPage(url: String, title: String, close: () -> Unit,
                                 play: (String, String) -> Unit) {
     val p = LocalBilaiColors.current
     var rows by remember(url) { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
-    var loading by remember(url) { mutableStateOf(true) }
+    var loading by remember(url) { mutableStateOf(false) }
     var failed by remember(url) { mutableStateOf(false) }
-    DisposableEffect(url) {
-        val request = ExtractorHelper.getPlaylistInfo(ServiceList.YouTube.serviceId, url, false)
-            .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({
-                rows = it.relatedItems.filterIsInstance<StreamInfoItem>().distinctBy { item -> item.url }
+    var next by remember(url) { mutableStateOf<Page?>(null) }
+    val requests = remember(url) { SerialDisposable() }
+    val list = rememberLazyListState()
+    fun load(page: Page?) {
+        if (loading) return
+        loading = true
+        failed = false
+        val service = ServiceList.YouTube.serviceId
+        val data = if (page == null) ExtractorHelper.getPlaylistInfo(service, url, false)
+            .map { it.relatedItems to it.nextPage }
+        else ExtractorHelper.getMorePlaylistItems(service, url, page).map { it.items to it.nextPage }
+        requests.set(data.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
+            .subscribe({ (items, continuation) ->
+                rows = (rows + items).distinctBy { it.url }
+                next = continuation?.takeIf { it.url != page?.url || it.id != page?.id }
                 loading = false
-            }, { loading = false; failed = true })
-        onDispose { request.dispose() }
+            }, { loading = false; failed = true }))
+    }
+    DisposableEffect(url, requests) {
+        load(null)
+        onDispose { requests.dispose() }
+    }
+    LaunchedEffect(next, loading, failed, rows.size) {
+        val page = next ?: return@LaunchedEffect
+        if (!Page.isValid(page) || loading || failed) return@LaunchedEffect
+        snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }.collect { index ->
+            if (index >= rows.size - 3) load(page)
+        }
     }
     BrowseScreen(title, close) {
-        LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (rows.isEmpty()) item {
-                FeedText(if (loading) "Loading playlist…" else if (failed) "Couldn't load playlist." else "No videos",
-                    12, p.muted)
-            }
+        LazyColumn(state = list, contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(rows, key = { it.url }) { item ->
                 BrowseRow(item.name, item.uploaderName.orEmpty(), item.thumbnailUrl) { play(item.url, item.name) }
+            }
+            when {
+                loading -> item { FeedText("Loading playlist…", 12, p.muted) }
+                failed -> item { WatchPill("Retry playlist", p.onAccent, p.accent) { load(next) } }
+                rows.isEmpty() -> item { FeedText("No videos", 12, p.muted) }
             }
         }
     }

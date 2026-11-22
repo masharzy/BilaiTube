@@ -284,7 +284,12 @@ class BilaiShell(private val activity: ComponentActivity) {
         if (intent.action == Intent.ACTION_VIEW) intent.dataString?.let(::openUrl)
         applyDebugIntent(intent)
         if (BuildConfig.DEBUG && intent.action == "com.masharzy.bilaitube.DEBUG_PLAY") {
-            intent.getStringExtra("bt.uri")?.let { play(it, "Sample video") }
+            intent.getStringExtra("bt.uri")?.let {
+                if (intent.getBooleanExtra("bt.offline", false)) {
+                    val fixture = java.io.File(activity.filesDir.parentFile, "sample.mp4")
+                    openOffline(Uri.fromFile(fixture), "Offline sample")
+                } else play(it, "Sample video")
+            }
         }
     }
 
@@ -411,7 +416,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     initialShortUrl = url
                                     select(Tab.SHORTS)
                                 }, ::openVideoMenu)
-                                Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, ::accountAction, ::share)
+                                Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl,
+                                    { react(Reaction.LIKE) }, ::subscribeTo, ::share)
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu)
                                 Tab.YOU -> YouTab(dark, signedIn, ::play, { overlay = it }, sponsorBlock, ::toggleSponsorBlock, hideShorts) {
                                     hideShorts = !hideShorts
@@ -483,7 +489,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                             SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist)
                         } else if (name == "Channel") {
                             browseTarget?.let { (url, title) ->
-                                ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist, ::accountAction)
+                                ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist,
+                                    subscribed = subscriptions[url] == true, onSubscribe = { subscribeTo(url) })
                             }
                         } else if (name == "Remote playlist") {
                             browseTarget?.let { (url, title) ->
@@ -590,16 +597,19 @@ class BilaiShell(private val activity: ComponentActivity) {
         var loading by remember(url) { mutableStateOf(true) }
         var failed by remember(url) { mutableStateOf(false) }
         val request = remember(url) { SerialDisposable() }
-        DisposableEffect(url) {
-            request.set(ExtractorHelper.getCommentsInfo(ServiceList.YouTube.serviceId, url, false)
+        var reload by remember(url) { mutableIntStateOf(0) }
+        LaunchedEffect(url, reload) {
+            loading = true
+            failed = false
+            request.set(ExtractorHelper.getCommentsInfo(ServiceList.YouTube.serviceId, url, reload > 0)
                 .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe({ page ->
                     info = page
                     comments = page.relatedItems
                     next = page.nextPage
                     loading = false
                 }, { loading = false; failed = true }))
-            onDispose { request.dispose() }
         }
+        DisposableEffect(request) { onDispose { request.dispose() } }
         var replyTo by remember(url) { mutableStateOf<String?>(null) }
         var composeComment by remember(url) { mutableStateOf(false) }
         var draft by remember(url) { mutableStateOf("") }
@@ -645,7 +655,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         WatchPill("Post", p.onAccent, p.accent, enabled = draft.isNotBlank()) {
                             val id = engine.current.value?.id ?: return@WatchPill
                             mutateAccount("comment:$id", YoutubeAccountActions.comment(id, draft.trim()),
-                                success = { draft = ""; composeComment = false; toast = "Comment posted" })
+                                success = { draft = ""; composeComment = false; reload++; toast = "Comment posted" })
                         }
                     }
                 }

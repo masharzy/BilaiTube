@@ -36,7 +36,7 @@ import org.schabi.newpipe.util.ExtractorHelper
 
 @Composable
 internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialUrl: String?,
-                       openSignIn: () -> Unit, share: (String) -> Unit) {
+                       like: () -> Unit, subscribe: (String) -> Unit, share: (String) -> Unit) {
     val p = LocalBilaiColors.current
     var fallback by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     var failed by remember { mutableStateOf(false) }
@@ -86,7 +86,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             NetImage(clip.uploaderAvatarUrl, Modifier.size(32.dp).clip(CircleShape), avatar = true)
                             FeedText(clip.uploaderName.orEmpty(), 12, Color.White, FontWeight.Bold)
-                            WatchPill("Subscribe", p.onAccent, p.accent, click = openSignIn)
+                            WatchPill("Subscribe", p.onAccent, p.accent) { clip.uploaderUrl?.let(subscribe) }
                         }
                         FeedText(clip.name, 14, Color.White, FontWeight.Medium)
                     }
@@ -97,7 +97,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
             }
             Column(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                WatchPill("Like", Color.White, Color.Black.copy(alpha = .45f), click = openSignIn)
+                WatchPill("Like", Color.White, Color.Black.copy(alpha = .45f), click = like)
                 active?.let { WatchPill("Share", Color.White, Color.Black.copy(alpha = .45f)) { share(it.url) } }
             }
         }
