@@ -631,7 +631,7 @@ internal fun PlayerSwitch(checked: Boolean, label: String, onToggle: () -> Unit)
         .semantics { contentDescription = label }.padding(2.dp)) {
         Box(Modifier.offset(x = offset.dp).size(16.dp).background(Color.White, CircleShape),
             contentAlignment = Alignment.Center) {
-            MIcon(if (checked) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, Color.Black, 12.dp)
+            if (label == "Autoplay") MIcon(if (checked) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, Color.Black, 12.dp)
         }
     }
 }
