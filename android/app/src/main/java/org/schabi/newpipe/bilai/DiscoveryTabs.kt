@@ -351,11 +351,11 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
                 ProfileRow("Offline Downloads", "", Glyph.DOWNLOAD) { show("Offline Downloads") }
                 ProfileRow("Watch Later", "", Glyph.FLOAT) { show("Watch Later") }
                 ProfileRow("Playlists", "", Glyph.HOME) { show("Playlists") }
-                ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF", toggleSkip)
+                ProfileRow("SponsorBlock Auto-Skip", if (skip) "ON" else "OFF", click = toggleSkip)
                 ProfileRow("Return YouTube Dislike", if (dislike) "ON" else "OFF") {
                     dislike = !dislike; prefs.edit().putBoolean(dislikeKey, dislike).apply()
                 }
-                ProfileRow("Hide Shorts from Home", if (hideShorts) "ON" else "OFF", toggleHideShorts)
+                ProfileRow("Hide Shorts from Home", if (hideShorts) "ON" else "OFF", click = toggleHideShorts)
             }
         }
     }
