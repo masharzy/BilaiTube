@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/video_item_detail"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/windowBackground">
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:id="@+id/detail_main_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.appbar.AppBarLayout
+            android:id="@+id/app_bar_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            app:elevation="0dp"
+            app:layout_behavior="com.google.android.material.appbar.FlingBehavior">
+
+            <org.schabi.newpipe.views.CustomCollapsingToolbarLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:layout_scrollFlags="scroll">
+
+                <FrameLayout
+                    android:id="@+id/detail_thumbnail_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:layout_collapseMode="parallax">
+
+                    <include
+                        android:id="@+id/detail_thumbnail_root_layout"
+                        layout="@layout/video_detail_thumbnail" />
+
+                </FrameLayout>
+            </org.schabi.newpipe.views.CustomCollapsingToolbarLayout>
+
+            <!-- CONTENT -->
+            <include
+                android:id="@+id/detail_content_root_layout"
+                layout="@layout/video_detail_content" />
+        </com.google.android.material.appbar.AppBarLayout>
+
+        <androidx.viewpager2.widget.ViewPager2
+            android:id="@+id/view_pager"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:layout_behavior="@string/appbar_scrolling_view_behavior"
+            android:paddingBottom="48dp"/>
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tab_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center"
+            app:tabIndicatorGravity="top"
+            app:tabIconTint="?attr/colorAccent"
+            app:tabBackground="?attr/windowBackground"
+            app:tabGravity="fill"
+            app:elevation="16dp"/>
+
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+
+    <FrameLayout
+        android:id="@+id/sticky_player_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+
+    <include
+        android:id="@+id/overlay_layout"
+        layout="@layout/video_detail_mini_player" />
+
+</FrameLayout>
