@@ -262,7 +262,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
 }
 
 @Composable
-internal fun YouTab(dark: Boolean, red: Boolean, signedIn: Boolean, accountEmail: String?,
+internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signedIn: Boolean, accountEmail: String?,
                     toggleDark: () -> Unit, toggleAccent: () -> Unit,
                     open: (String, String) -> Unit, show: (String) -> Unit,
                    skip: Boolean, toggleSkip: () -> Unit, hideShorts: Boolean, toggleHideShorts: () -> Unit) {
@@ -280,6 +280,9 @@ internal fun YouTab(dark: Boolean, red: Boolean, signedIn: Boolean, accountEmail
             }, {})
         onDispose { history.dispose() }
     }
+    val historyShown = if (fixtureHistory)
+        remember { WatchReviewFixture.stream("fixture").relatedItems.filterIsInstance<StreamInfoItem>().take(4) }
+    else recent
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -324,12 +327,20 @@ internal fun YouTab(dark: Boolean, red: Boolean, signedIn: Boolean, accountEmail
         item {
             Row(Modifier.fillMaxWidth().clickable { show("History") }, horizontalArrangement = Arrangement.SpaceBetween) {
                 FeedText("History", 14, p.text, FontWeight.Bold)
-                FeedText("${recent.size} watched", 12, p.muted)
+                FeedText("${historyShown.size} watched", 12, p.muted)
             }
-            if (recent.isNotEmpty()) LazyRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(recent.take(15), key = { it.url }) { item ->
+            if (historyShown.isNotEmpty()) LazyRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(historyShown.take(15), key = { it.url }) { item ->
                     Column(Modifier.width(144.dp).clickable { open(item.url, item.name) }) {
-                        NetImage(item.thumbnailUrl, Modifier.fillMaxWidth().aspectRatio(16f / 9).clip(RoundedCornerShape(12.dp)))
+                        Box {
+                            NetImage(item.thumbnailUrl, Modifier.fillMaxWidth().aspectRatio(16f / 9)
+                                .clip(RoundedCornerShape(12.dp)))
+                            Box(Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                                .background(Color.Black.copy(alpha = .85f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)) {
+                                FeedText(formatTime(item.duration), 9, Color.White, FontWeight.SemiBold)
+                            }
+                        }
                         FeedText(item.name, 11, p.text, FontWeight.SemiBold)
                     }
                 }
