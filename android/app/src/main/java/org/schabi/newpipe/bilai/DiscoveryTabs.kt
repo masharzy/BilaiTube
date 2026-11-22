@@ -74,7 +74,8 @@ private val SHORTS_QUERIES = listOf("#shorts", "shorts funny", "shorts trending"
 internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialUrl: String?,
                        fixture: List<StreamInfoItem>?, like: () -> Unit, dislike: () -> Unit,
                        comments: (String) -> Unit, subscribe: (String) -> Unit, share: (String) -> Unit,
-                       search: () -> Unit = {}) {
+                       search: () -> Unit = {}, reactionOf: (String) -> String = { "NONE" },
+                       download: () -> Unit = {}) {
     val p = LocalBilaiColors.current
     var extra by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     var failed by remember { mutableStateOf(false) }
@@ -165,11 +166,13 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
                 val clip = clips[page]
                 val ownsPlayback = page == pager.currentPage
                 val info = metadata?.takeIf { ownsPlayback && youtubeId(it.url) == youtubeId(clip.url) }
+                val reaction = info?.id?.let(reactionOf) ?: "NONE"
+                var heartBurst by remember { mutableIntStateOf(0) }
                 Box(Modifier.fillMaxSize().background(Color.Black)
                     .pointerInput(ownsPlayback) {
                         detectTapGestures(onTap = {
                             if (ownsPlayback) { engine.togglePlay(); pauseFlash++ }
-                        }, onDoubleTap = { if (ownsPlayback) like() })
+                        }, onDoubleTap = { if (ownsPlayback) { heartBurst++; if (reaction != "LIKE") like() } })
                     }) {
                     if (ownsPlayback) AndroidView(factory = { TextureView(it).also(engine::attachSurface) },
                         modifier = Modifier.fillMaxSize(), update = { texture ->
@@ -202,6 +205,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
                             modifier = Modifier.align(Alignment.Center).size(36.dp), strokeWidth = 3.dp)
                     }
                     if (ownsPlayback) PauseFlash(pauseFlash, state.playing, Modifier.align(Alignment.Center))
+                    HeartBurst(heartBurst, p.accent, Modifier.align(Alignment.Center))
                     val uploader = (info?.uploaderName ?: clip.uploaderName).orEmpty()
                         .takeUnless { it.isBlank() || it == "YouTube Shorts" }
                     val channel = (info?.uploaderUrl ?: clip.uploaderUrl)?.takeIf { it.isNotBlank() }
@@ -227,11 +231,14 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
                     }
                     Column(Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                        ShortsAction(Icons.Rounded.ThumbUp, "Like",
-                            watchCount(info?.likeCount ?: -1).ifBlank { "Like" }, like)
+                        val likes = (info?.likeCount ?: -1).let { if (it >= 0 && reaction == "LIKE") it + 1 else it }
+                        ShortsAction(Icons.Rounded.ThumbUp, "Like", watchCount(likes).ifBlank { "Like" },
+                            if (reaction == "LIKE") p.accent else Color.White, like)
                         ShortsAction(Icons.Rounded.ThumbDown, "Dislike",
-                            watchCount(info?.dislikeCount ?: -1).ifBlank { "Dislike" }, dislike)
+                            watchCount(info?.dislikeCount ?: -1).ifBlank { "Dislike" },
+                            if (reaction == "DISLIKE") p.accent else Color.White, dislike)
                         ShortsAction(Icons.Rounded.ChatBubble, "Comments", "Comments") { comments(clip.url) }
+                        ShortsAction(Icons.Rounded.Download, "Download", "Download") { if (info != null) download() }
                         ShortsAction(Icons.Rounded.Share, "Share", "Share") { share(clip.url) }
                         val avatar = info?.uploaderAvatarUrl
                         if (!avatar.isNullOrBlank()) NetImage(avatar, Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
@@ -250,6 +257,23 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
             BText("Shorts", 20f, Color.White, FontWeight.Bold, modifier = Modifier.weight(1f))
             RoundIconButton(Icons.Rounded.Search, "Search", Color.White, Color.Transparent, 44.dp, 26.dp, click = search)
         }
+    }
+}
+
+@Composable
+private fun HeartBurst(trigger: Int, color: Color, modifier: Modifier) {
+    if (trigger == 0) return
+    val scale = remember { androidx.compose.animation.core.Animatable(0f) }
+    val alpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(trigger) {
+        scale.snapTo(.3f); alpha.snapTo(1f)
+        kotlinx.coroutines.coroutineScope {
+            launch { scale.animateTo(1.15f, spring(.45f, 380f)) }
+            launch { delay(450); alpha.animateTo(0f, tween(250)) }
+        }
+    }
+    Box(modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value; this.alpha = alpha.value }) {
+        MIcon(Icons.Rounded.ThumbUp, color, 96.dp)
     }
 }
 
@@ -273,12 +297,16 @@ private fun PauseFlash(trigger: Int, playing: Boolean, modifier: Modifier) {
 
 @Composable
 private fun ShortsAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, caption: String,
-                         action: () -> Unit) {
+                         tint: Color = Color.White, action: () -> Unit) {
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(tint) {
+        if (tint != Color.White) { pop.snapTo(.7f); pop.animateTo(1f, spring(.4f, 500f)) }
+    }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = action)
         .semantics { contentDescription = label }.padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = .35f), CircleShape), contentAlignment = Alignment.Center) {
-            MIcon(icon, Color.White, 26.dp)
+            Box(Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }) { MIcon(icon, tint, 26.dp) }
         }
         BText(caption, 12f, Color.White, FontWeight.SemiBold)
     }
@@ -311,7 +339,7 @@ private suspend fun loadChannelVideos(item: SubscriptionEntity): List<StreamInfo
 @Composable
 internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoItem) -> Unit, fixture: Boolean = false,
                               explore: () -> Unit = {}, channelPage: (String, String) -> Unit = { _, _ -> },
-                              openShort: (String) -> Unit = {}) {
+                              openShort: (String) -> Unit = {}, signedIn: Boolean = false, signIn: () -> Unit = {}) {
     val context = LocalContext.current
     val p = LocalBilaiColors.current
     var channels by remember { mutableStateOf<List<SubscriptionEntity>?>(null) }
@@ -331,8 +359,41 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
             }
         }
     } else channels
-    DisposableEffect(context) {
-        if (fixture) onDispose { }
+    // Signed in: channels and the "All" feed come straight from the YouTube account.
+    var accountFeed by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
+    var accountNext by remember { mutableStateOf<String?>(null) }
+    var accountLoading by remember { mutableStateOf(false) }
+    val feedApi = org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
+    val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
+    val country = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry()
+    LaunchedEffect(signedIn, refresh) {
+        if (!signedIn || fixture) return@LaunchedEffect
+        accountLoading = true
+        val list = withContext(Dispatchers.IO) {
+            runCatching { feedApi.fetchSubscribedChannels(loc, country) }.getOrDefault(emptyList())
+        }
+        channels = list.mapIndexed { index, item ->
+            SubscriptionEntity().apply {
+                uid = (index + 1).toLong(); name = item.name; url = item.url
+                avatarUrl = item.avatar; serviceId = ServiceList.YouTube.serviceId
+            }
+        }
+        val page = withContext(Dispatchers.IO) { runCatching { feedApi.fetchFeed("FEsubscriptions", loc, country) }.getOrNull() }
+        accountFeed = page?.items.orEmpty()
+        accountNext = page?.continuation
+        accountLoading = false
+    }
+    suspend fun moreAccountFeed() {
+        val token = accountNext ?: return
+        if (accountLoading) return
+        accountLoading = true
+        val page = withContext(Dispatchers.IO) { runCatching { feedApi.fetchContinuation(token, loc, country) }.getOrNull() }
+        accountFeed = (accountFeed + page?.items.orEmpty()).distinctBy { it.url }
+        accountNext = page?.continuation?.takeIf { it != token }
+        accountLoading = false
+    }
+    DisposableEffect(context, signedIn) {
+        if (fixture || signedIn) onDispose { }
         else {
             val subscription = SubscriptionManager(context).subscriptions().subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread()).subscribe({ channels = it }, { channels = emptyList() })
@@ -346,6 +407,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
             list.forEach { ch -> perChannel[ch.uid] = rows.filterIndexed { i, _ -> i % 2L == ch.uid - 1L }.take(6) }
             return@LaunchedEffect
         }
+        if (signedIn) return@LaunchedEffect
         val missing = list.filter { refresh > 0 || it.uid !in perChannel }.take(60)
         pending = missing.size
         val gate = kotlinx.coroutines.sync.Semaphore(6)
@@ -358,9 +420,15 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
             }
         }
     }
-    val rows = remember(perChannel.toMap(), channel, filter) {
+    LaunchedEffect(channel, signedIn) {
+        val selectedId = channel ?: return@LaunchedEffect
+        if (!signedIn || selectedId in perChannel) return@LaunchedEffect
+        shownChannels?.firstOrNull { it.uid == selectedId }?.let { perChannel[selectedId] = loadChannelVideos(it) }
+    }
+    val rows = remember(perChannel.toMap(), channel, filter, accountFeed, signedIn) {
         val now = java.time.OffsetDateTime.now()
-        perChannel.filterKeys { channel == null || it == channel }.values.flatten()
+        (if (signedIn && channel == null) accountFeed
+            else perChannel.filterKeys { channel == null || it == channel }.values.flatten())
             .distinctBy { youtubeId(it.url) ?: it.url }
             .filter { video ->
                 when (filter) {
@@ -371,12 +439,23 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
                     SubsFilter.LIVE -> video.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM
                 }
             }
-            .sortedByDescending { it.uploadDate?.offsetDateTime() }
+            .let { if (signedIn && channel == null) it else it.sortedByDescending { v -> v.uploadDate?.offsetDateTime() } }
+    }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(listState, signedIn, accountNext) {
+        if (!signedIn) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }.collect { last ->
+            if (last >= listState.layoutInfo.totalItemsCount - 4 && channel == null) moreAccountFeed()
+        }
     }
     val list = shownChannels
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        if (list == null) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
+        if (list == null || (signedIn && accountLoading && list.isEmpty())) {
             items(3) { SubsSkeleton() }
+            return@LazyColumn
+        }
+        if (list.isEmpty() && !signedIn) {
+            item { SubsSignIn(signIn) }
             return@LazyColumn
         }
         if (list.isEmpty()) {
@@ -453,7 +532,7 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
                 }
             }
         }
-        if (rows.isEmpty() && pending > 0) items(3) { SubsSkeleton() }
+        if (rows.isEmpty() && (pending > 0 || accountLoading)) items(3) { SubsSkeleton() }
         else if (rows.isEmpty()) item {
             Box(Modifier.fillMaxWidth().padding(vertical = 64.dp, horizontal = 32.dp), contentAlignment = Alignment.Center) {
                 BText(when (filter) {
@@ -490,6 +569,24 @@ internal fun SubscriptionsTab(open: (String, String) -> Unit, menu: (StreamInfoI
 }
 
 @Composable
+private fun SubsSignIn(signIn: () -> Unit) {
+    val p = LocalBilaiColors.current
+    Column(Modifier.fillMaxWidth().padding(top = 96.dp, start = 32.dp, end = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(96.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+            MIcon(Icons.Rounded.Subscriptions, p.accent, 44.dp)
+        }
+        BText("Sign in to see your subscriptions", 18f, p.text, FontWeight.Bold, maxLines = 2)
+        BText("Subscribing to channels needs your Google account. Your subscriptions and their newest videos will show up here.",
+            13f, p.muted, maxLines = 4, lineHeight = 18f)
+        Box(Modifier.padding(top = 6.dp).clip(CircleShape).background(p.accent).clickable(onClick = signIn)
+            .padding(horizontal = 24.dp, vertical = 11.dp)) {
+            BText("Sign in", 14f, p.onAccent, FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun SubsSkeleton() {
     val p = LocalBilaiColors.current
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
@@ -513,7 +610,7 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
     val context = LocalContext.current
     val prefs = remember(context) { PreferenceManager.getDefaultSharedPreferences(context) }
     val dislikeKey = context.getString(R.string.show_dislike_key)
-    var dislike by remember { mutableStateOf(prefs.getBoolean(dislikeKey, false)) }
+    var dislike by remember { mutableStateOf(prefs.getBoolean(dislikeKey, true)) }
     var recent by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     val p = LocalBilaiColors.current
     DisposableEffect(context) {
@@ -554,7 +651,11 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
         while (true) {
             iterator.start()
             iterator.end()
-            downloadCount = iterator.oldListSize
+            // The iterator also contains section headers; count only real, still-existing files.
+            downloadCount = (0 until iterator.oldListSize).count { index ->
+                val mission = iterator.getItem(index).mission ?: return@count false
+                mission !is us.shandian.giga.get.FinishedMission || runCatching { mission.storage.existsAsFile() }.getOrDefault(true)
+            }
             delay(2000)
         }
     }
@@ -628,6 +729,7 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
                 ProfileRow("SponsorBlock auto-skip", "", Icons.Rounded.FastForward, toggle = skip, click = toggleSkip)
                 ProfileRow("Return YouTube Dislike", "", Icons.Rounded.ThumbDown, toggle = dislike) {
                     dislike = !dislike; prefs.edit().putBoolean(dislikeKey, dislike).apply()
+                    org.schabi.newpipe.util.ServiceHelper.initServices(context)
                 }
                 ProfileRow("Hide Shorts on Home", "", Icons.Rounded.Bolt, toggle = hideShorts,
                     click = toggleHideShorts)

@@ -38,7 +38,7 @@ import javax.annotation.Nullable;
  */
 public final class YoutubeHomeFeedExtractor {
 
-    private static final int MAX_DEPTH = 12;
+    private static final int MAX_DEPTH = 24;
 
     private YoutubeHomeFeedExtractor() {
     }
@@ -161,6 +161,114 @@ public final class YoutubeHomeFeedExtractor {
             return new Page(Collections.emptyList(), Collections.emptyList(), null);
         }
         return parseItems(section.getArray("contents"), Collections.emptyList(), localization);
+    }
+
+    /**
+     * Any signed-in feed, e.g. {@code FEhistory} (watch history) or {@code FEsubscriptions}
+     * (latest uploads of subscribed channels). Continue with {@link #fetchContinuation}.
+     */
+    @Nonnull
+    public static Page fetchFeed(@Nonnull final String browseId,
+                                 @Nonnull final Localization localization,
+                                 @Nonnull final ContentCountry country)
+            throws IOException, ExtractionException {
+        final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
+                .value("browseId", browseId)
+                .done()).getBytes(UTF_8);
+        final JsonObject data = browse(body, localization);
+        final JsonObject grid = findFirstObject(data, "richGridRenderer", 0);
+        if (grid != null) {
+            return parseItems(grid.getArray("contents"), Collections.emptyList(), localization);
+        }
+        final JsonObject section = findFirstObject(data, "sectionListRenderer", 0);
+        if (section != null) {
+            return parseItems(section.getArray("contents"), Collections.emptyList(), localization);
+        }
+        return new Page(Collections.emptyList(), Collections.emptyList(), null);
+    }
+
+    /** A channel the signed-in account is subscribed to. */
+    public static final class AccountChannel {
+        public final String url;
+        public final String name;
+        @Nullable
+        public final String avatar;
+
+        AccountChannel(final String url, final String name, @Nullable final String avatar) {
+            this.url = url;
+            this.name = name;
+            this.avatar = avatar;
+        }
+    }
+
+    /** Channels the signed-in account is subscribed to ({@code FEchannels}). */
+    @Nonnull
+    public static List<AccountChannel> fetchSubscribedChannels(@Nonnull final Localization localization,
+                                                               @Nonnull final ContentCountry country)
+            throws IOException, ExtractionException {
+        final byte[] body = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
+                .value("browseId", "FEchannels")
+                .done()).getBytes(UTF_8);
+        final List<AccountChannel> out = new ArrayList<>();
+        JsonObject data = browse(body, localization);
+        String token = collectChannels(data, out, 0);
+        // The list is paged; follow a few continuations so large accounts are complete.
+        for (int i = 0; i < 20 && token != null; i++) {
+            final byte[] next = JsonWriter.string(prepareDesktopJsonBuilder(localization, country)
+                    .value("continuation", token)
+                    .done()).getBytes(UTF_8);
+            data = browse(next, localization);
+            token = collectChannels(data, out, 0);
+        }
+        return out;
+    }
+
+    @Nullable
+    private static String collectChannels(final Object node, final List<AccountChannel> out,
+                                          final int depth) {
+        if (depth > 24) {
+            return null;
+        }
+        String token = null;
+        if (node instanceof JsonObject) {
+            final JsonObject obj = (JsonObject) node;
+            final JsonObject channel = obj.has("channelRenderer") ? obj.getObject("channelRenderer")
+                    : obj.has("gridChannelRenderer") ? obj.getObject("gridChannelRenderer") : null;
+            if (channel != null) {
+                final String id = channel.getString("channelId");
+                final String name = getTextAtKeySafe(channel, "title");
+                String avatar = null;
+                final JsonArray thumbs = channel.getObject("thumbnail").getArray("thumbnails");
+                if (!thumbs.isEmpty()) {
+                    avatar = thumbs.getObject(thumbs.size() - 1).getString("url");
+                    if (avatar != null && avatar.startsWith("//")) {
+                        avatar = "https:" + avatar;
+                    }
+                }
+                if (id != null && name != null) {
+                    out.add(new AccountChannel("https://www.youtube.com/channel/" + id, name, avatar));
+                }
+                return null;
+            }
+            if (obj.has("continuationItemRenderer")) {
+                return obj.getObject("continuationItemRenderer").getObject("continuationEndpoint")
+                        .getObject("continuationCommand").getString("token");
+            }
+            for (final Object value : obj.values()) {
+                final String found = collectChannels(value, out, depth + 1);
+                if (found != null) {
+                    token = found;
+                }
+            }
+        } else if (node instanceof JsonArray) {
+            for (final Object value : (JsonArray) node) {
+                final String found = collectChannels(value, out, depth + 1);
+                if (found != null) {
+                    token = found;
+                }
+            }
+        }
+        return token;
     }
 
     /** Playlists in the signed-in account's library ({@code FEplaylist_aggregation}). */
@@ -332,7 +440,7 @@ public final class YoutubeHomeFeedExtractor {
                                 @Nonnull final TimeAgoParser timeAgoParser,
                                 @Nonnull final String[] continuation,
                                 final int depth) {
-        if (depth > 4) {
+        if (depth > 6) {
             return;
         }
         for (final Object o : contents) {
@@ -350,6 +458,19 @@ public final class YoutubeHomeFeedExtractor {
             } else if (item.has("playlistVideoRenderer")) {
                 collector.commit(new YoutubeStreamInfoItemExtractor(
                         item.getObject("playlistVideoRenderer"), timeAgoParser));
+            } else if (item.has("shelfRenderer")) {
+                final JsonObject shelfContent = item.getObject("shelfRenderer").getObject("content");
+                for (final String key : new String[]{"expandedShelfContentsRenderer",
+                        "gridRenderer", "verticalListRenderer", "horizontalListRenderer"}) {
+                    if (shelfContent.has(key)) {
+                        final JsonObject inner = shelfContent.getObject(key);
+                        collect(inner.has("items") ? inner.getArray("items") : inner.getArray("contents"),
+                                collector, timeAgoParser, continuation, depth + 1);
+                    }
+                }
+            } else if (item.has("gridVideoRenderer")) {
+                collector.commit(new YoutubeStreamInfoItemExtractor(
+                        item.getObject("gridVideoRenderer"), timeAgoParser));
             } else if (item.has("itemSectionRenderer")) {
                 collect(item.getObject("itemSectionRenderer").getArray("contents"), collector,
                         timeAgoParser, continuation, depth + 1);

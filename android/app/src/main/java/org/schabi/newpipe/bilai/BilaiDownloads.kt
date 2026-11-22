@@ -174,9 +174,11 @@ internal fun OfflineDownloads(close: () -> Unit, play: (Uri, String) -> Unit) {
         while (true) {
             missions.start()
             missions.end()
-            entries = (0 until missions.oldListSize).mapNotNull { index ->
-                missions.getItem(index).mission?.let(::describe)
-            }.distinctBy { it.key }
+            val all = (0 until missions.oldListSize).mapNotNull { missions.getItem(it).mission }
+            // Files deleted from the gallery or a file manager disappear from the list too.
+            val gone = all.filter { it is FinishedMission && runCatching { !it.storage.existsAsFile() }.getOrDefault(false) }
+            gone.forEach { service.deleteMission(it) }
+            entries = (all - gone.toSet()).mapNotNull(::describe).distinctBy { it.key }
             loaded = true
             delay(700)
         }

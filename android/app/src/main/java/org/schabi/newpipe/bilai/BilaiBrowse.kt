@@ -51,7 +51,13 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun BrowseScreen(title: String, close: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val p = LocalBilaiColors.current
-    Column(Modifier.fillMaxSize().background(p.bg).clickable(interactionSource = null, indication = null) {}) {
+    val enter = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { enter.animateTo(1f, androidx.compose.animation.core.tween(280,
+        easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+    Column(Modifier.fillMaxSize().graphicsLayer {
+        translationX = (1f - enter.value) * size.width * .35f
+        alpha = .4f + .6f * enter.value
+    }.background(p.bg).clickable(interactionSource = null, indication = null) {}) {
         Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", p.text, Color.Transparent, 44.dp, 24.dp,
@@ -460,6 +466,8 @@ internal fun AccountPlaylistPage(playlistId: String, title: String, close: () ->
     var next by remember(playlistId) { mutableStateOf<String?>(null) }
     var loading by remember(playlistId) { mutableStateOf(true) }
     var failed by remember(playlistId) { mutableStateOf(false) }
+    var reason by remember(playlistId) { mutableStateOf<String?>(null) }
+    var retry by remember(playlistId) { mutableIntStateOf(0) }
     val list = rememberLazyListState()
     suspend fun load(token: String?) {
         loading = true
@@ -468,11 +476,13 @@ internal fun AccountPlaylistPage(playlistId: String, title: String, close: () ->
             runCatching {
                 val loc = org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
                 val country = org.schabi.newpipe.extractor.NewPipe.getPreferredContentCountry()
-                if (token == null) org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
-                    .fetchPlaylist(playlistId, loc, country)
+                val feed = org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
+                if (token == null && playlistId.startsWith("FE")) feed.fetchFeed(playlistId, loc, country)
+                else if (token == null) feed.fetchPlaylist(playlistId, loc, country)
                 else org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeHomeFeedExtractor
                     .fetchContinuation(token, loc, country)
-            }.getOrNull()
+            }.onFailure { reason = it.message ?: it.javaClass.simpleName
+                android.util.Log.w("BilaiAccount", "loading $playlistId failed", it) }.getOrNull()
         }
         if (page == null) failed = true
         else {
@@ -481,7 +491,7 @@ internal fun AccountPlaylistPage(playlistId: String, title: String, close: () ->
         }
         loading = false
     }
-    LaunchedEffect(playlistId) { load(null) }
+    LaunchedEffect(playlistId, retry) { rows = emptyList(); load(null) }
     LaunchedEffect(next, loading, rows.size) {
         val token = next ?: return@LaunchedEffect
         if (loading) return@LaunchedEffect
@@ -504,7 +514,13 @@ internal fun AccountPlaylistPage(playlistId: String, title: String, close: () ->
                         Box(Modifier.weight(1f).height(14.dp).background(p.elevated, RoundedCornerShape(4.dp)))
                     }
                 }
-                failed -> item { WatchPill("Couldn't load · Retry", p.text, p.elevated) {} }
+                failed -> item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BText("Couldn't load from your YouTube account.", 14f, p.text, FontWeight.SemiBold)
+                        reason?.let { BText(it, 12f, p.muted, maxLines = 3) }
+                        WatchPill("Retry", p.onAccent, p.accent) { retry++ }
+                    }
+                }
                 rows.isEmpty() -> item { BText("No videos here yet", 13f, p.muted) }
             }
         }

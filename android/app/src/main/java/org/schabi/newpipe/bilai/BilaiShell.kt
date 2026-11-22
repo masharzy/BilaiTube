@@ -170,8 +170,50 @@ class BilaiShell(private val activity: ComponentActivity) {
         }, {}))
     }
 
+    /** The user asked for audio in the background ("Play in background"); don't pause on stop. */
+    private var backgroundRequested = false
+    private var pipClosed = false
+
+    /** Leaving the app with a video playing turns it into a floating mini player (picture-in-picture). */
+    fun onUserLeaveHint() {
+        if (video == null || pip || backgroundRequested || !engine.state.value.playing) return
+        if (Build.VERSION.SDK_INT < 26 ||
+            !activity.packageManager.hasSystemFeature("android.software.picture_in_picture")) return
+        overlay = null
+        runCatching {
+            activity.enterPictureInPictureMode(PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9)).build())
+        }
+    }
+
+    fun onResume() {
+        backgroundRequested = false
+        pipClosed = false
+    }
+
+    /**
+     * App went out of view. Closing the floating player stops playback completely; otherwise
+     * playback pauses so nothing keeps running (and draining the battery) in the background,
+     * unless background play was chosen explicitly.
+     */
+    fun onStop() {
+        if (pipClosed && !pip) {
+            pipClosed = false
+            engine.stop()
+            video = null
+            compact = false
+            return
+        }
+        if (pip || backgroundRequested) return
+        if (engine.state.value.playing) engine.togglePlay()
+    }
+
     fun setPictureInPicture(enabled: Boolean) {
+        pipClosed = !enabled && pip &&
+            !activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
         pip = enabled
+        // Some Android versions stop the activity before reporting that PiP was dismissed.
+        if (pipClosed && !activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) onStop()
         if (BuildConfig.DEBUG) android.util.Log.i("BilaiPip", "Mode changed: $enabled")
     }
 
@@ -498,17 +540,27 @@ class BilaiShell(private val activity: ComponentActivity) {
                             notify = { toast = "No new notifications" },
                             dark = dark, toggleDark = ::changeDark, toggleAccent = ::changeAccent,
                         )
-                        Box(Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}")) {
+                        androidx.compose.animation.AnimatedContent(tab, Modifier.weight(1f).fillMaxWidth().debugTag("content_${tab.id}"),
+                            transitionSpec = {
+                                val forward = targetState.ordinal > initialState.ordinal
+                                (androidx.compose.animation.slideInHorizontally(tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
+                                    if (forward) it / 5 else -it / 5 } + fadeIn(tween(220))) togetherWith
+                                    (androidx.compose.animation.slideOutHorizontally(tween(260)) { if (forward) -it / 8 else it / 8 } +
+                                        fadeOut(tween(160)))
+                            }, label = "tabs") { tab ->
                             when (tab) {
                                 Tab.HOME -> HomeFeed(homeFeed, list, ::play, { url ->
                                     initialShortUrl = url
                                     select(Tab.SHORTS)
                                 }, ::openVideoMenu)
                                 Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, debugShorts,
+                                    reactionOf = { id -> reactions[id]?.name ?: "NONE" },
+                                    download = { overlay = "Download picker" },
                                     { react(Reaction.LIKE) }, { react(Reaction.DISLIKE) },
                                     { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share,
                                     search = { overlay = "Search" })
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu, fixture = BuildConfig.DEBUG && fixtureSubs,
+                                    signedIn = signedIn, signIn = { overlay = "Sign in" },
                                     explore = { overlay = "Search" }, channelPage = ::openChannel,
                                     openShort = { url -> initialShortUrl = url; select(Tab.SHORTS) })
                                 Tab.YOU -> YouTab(dark, red, BuildConfig.DEBUG && fixtureYou,
@@ -590,6 +642,8 @@ class BilaiShell(private val activity: ComponentActivity) {
                         } else if (name.startsWith("Account:")) {
                             val parts = name.split(":", limit = 3)
                             AccountPlaylistPage(parts[1], parts.getOrElse(2) { "Playlist" }, { overlay = null }, ::play)
+                        } else if (name == "History" && signedIn) {
+                            AccountPlaylistPage("FEhistory", "History", { overlay = null }, ::play)
                         } else if (name == "Watch Later" && signedIn) {
                             AccountPlaylistPage("WL", "Watch Later", { overlay = null }, ::play)
                         } else if (name == "Playlists" && signedIn) {
@@ -773,7 +827,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         if (current == null && video != null) {
                             SheetRow(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture") { enterPictureInPicture() }
                             SheetRow(Icons.Rounded.Headphones, "Play in background") {
-                                sheet.close(); activity.moveTaskToBack(true)
+                                sheet.close(); backgroundRequested = true; activity.moveTaskToBack(true)
                             }
                             SheetRow(Icons.Rounded.Download, "Download") { overlay = "Download picker" }
                         }
@@ -856,7 +910,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                     WatchPill("Newest", if (newest) p.onAccent else p.text, if (newest) p.accent else p.elevated) { newest = true }
                 }
             }
-            if (signedIn) item {
+            if (COMMENT_POSTING) item {
                 if (!composeComment) WatchPill("Add a comment…", p.text, p.elevated) {
                     if (signedIn) composeComment = true else accountAction()
                 } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1120,7 +1174,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                             PlayerSwitch(loopVideo, "Loop video") { loopVideo = !loopVideo; engine.setLoop(loopVideo) }
                         }) { loopVideo = !loopVideo; engine.setLoop(loopVideo) }
                         SheetRow(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture") { close(); enterPictureInPicture() }
-                        SheetRow(Icons.Rounded.Headphones, "Play in background") { close(); activity.moveTaskToBack(true) }
+                        SheetRow(Icons.Rounded.Headphones, "Play in background") { close(); backgroundRequested = true; activity.moveTaskToBack(true) }
                     }
                 }
             }
@@ -1187,6 +1241,9 @@ class BilaiShell(private val activity: ComponentActivity) {
         }
     }
 }
+
+/** YouTube needs per-video comment params we can't obtain, so posting stays off. */
+private const val COMMENT_POSTING = false
 
 internal fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
 

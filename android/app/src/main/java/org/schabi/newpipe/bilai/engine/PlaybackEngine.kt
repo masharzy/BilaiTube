@@ -183,10 +183,17 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
      * into an existing file). Public Movies/Music first so the result appears in the gallery and
      * music apps; app-specific storage as a fallback when shared storage isn't writable.
      */
-    private fun createTarget(name: String, mime: String, audio: Boolean): StoredFileHelper? {
+    private fun createTarget(name: String, mime: String, audio: Boolean, category: String?): StoredFileHelper? {
         val publicDir = android.os.Environment.getExternalStoragePublicDirectory(
             if (audio) android.os.Environment.DIRECTORY_MUSIC else android.os.Environment.DIRECTORY_MOVIES)
+        // Videos are grouped by YouTube's category (Music, Gaming, ...) when it is known.
+        val known = setOf("Film & Animation", "Autos & Vehicles", "Music", "Pets & Animals", "Sports",
+            "Travel & Events", "Gaming", "People & Blogs", "Comedy", "Entertainment", "News & Politics",
+            "Howto & Style", "Education", "Science & Technology", "Nonprofits & Activism")
+        // Only YouTube's English category names become folders; anything else goes to BilaiTube/.
+        val folder = category?.trim()?.takeIf { !audio && it in known }?.replace("&", "and")
         val candidates = listOfNotNull(
+            if (folder != null) File(File(publicDir, "BilaiTube"), folder) else null,
             File(publicDir, "BilaiTube"),
             app.getExternalFilesDir(if (audio) android.os.Environment.DIRECTORY_MUSIC
                 else android.os.Environment.DIRECTORY_MOVIES),
@@ -225,7 +232,8 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         val safeTitle = info.name.replace(Regex("[\\\\/:*?\"<>|\n\r]"), " ").trim().take(80)
             .ifBlank { info.id }
         val mime = primary.format?.mimeType ?: if (option.audioOnly) "audio/mp4" else "video/mp4"
-        val storage = createTarget("$safeTitle (${option.label}).$suffix", mime, option.audioOnly)
+        val storage = createTarget("$safeTitle (${option.label}).$suffix", mime, option.audioOnly,
+            runCatching { info.category }.getOrNull())
             ?: return false.also { lastDownloadError = "No writable storage" }
         var psName: String? = when {
             option.audioOnly && m4a -> us.shandian.giga.postprocessing.Postprocessing.ALGORITHM_M4A_NO_DASH

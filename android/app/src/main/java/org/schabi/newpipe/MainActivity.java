@@ -33,6 +33,24 @@ public final class MainActivity extends ComponentActivity {
     }
 
     @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (shell != null) shell.onUserLeaveHint();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (shell != null) shell.onResume();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (shell != null) shell.onStop();
+    }
+
+    @Override
     protected void onNewIntent(final Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);

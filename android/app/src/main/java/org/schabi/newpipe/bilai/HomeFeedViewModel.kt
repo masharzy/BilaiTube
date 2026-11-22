@@ -313,11 +313,33 @@ class HomeFeedViewModel : ViewModel() {
                 ?.let { FeedCursor.Search(source, it) })
     }
 
+    /** Videos already shown in earlier loads, so a refresh puts new ones first like YouTube. */
+    private val seenPrefs = App.getApp().getSharedPreferences("bilai_feed", android.content.Context.MODE_PRIVATE)
+    private val seen = LinkedHashSet<String>(seenPrefs.getString("seen", "").orEmpty().split('\n').filter { it.isNotBlank() })
+
     private suspend fun applyPage(page: FeedPage, append: Boolean) {
         val known = if (append) allItems.map { it.url }.toHashSet() else HashSet()
-        val fresh = page.items.filter { known.add(it.url) }
+        var fresh = page.items.filter { known.add(it.url) }
+        var next = page.next
+        if (!append && fresh.isNotEmpty()) {
+            val repeated = fresh.count { it.url in seen }
+            val source = chipList.getOrNull(selected)?.source
+            if (repeated * 2 > fresh.size && next != null && source != null) {
+                // Mostly the same videos as last time: pull the next page too and lead with new ones.
+                runCatching { withContext(Dispatchers.IO) { fetch(source, next) } }.getOrNull()?.let { extra ->
+                    fresh = fresh + extra.items.filter { known.add(it.url) }
+                    next = extra.next
+                }
+            }
+            if (seen.isNotEmpty()) {
+                fresh = fresh.filter { it.url !in seen } + fresh.filter { it.url in seen }.shuffled()
+            }
+        }
+        fresh.forEach { seen.add(it.url) }
+        while (seen.size > 600) seen.remove(seen.first())
+        seenPrefs.edit().putString("seen", seen.joinToString("\n")).apply()
         allItems = if (append) allItems + fresh else fresh
-        continuation = page.next
+        continuation = next
         rebuildRows()
         if (fresh.isNotEmpty()) loadProgress(fresh)
     }
