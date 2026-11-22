@@ -50,12 +50,14 @@ internal data class PlaybackState(
     val qualities: List<Int> = emptyList(),
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    val firstFrame: Boolean = false,
 )
 
 internal interface PlaybackEngine {
     val state: StateFlow<PlaybackState>
     val current: StateFlow<StreamInfo?>
     fun play(url: String, startMs: Long = 0)
+    fun prefetch(url: String)
     fun playOffline(uri: Uri)
     fun attachSurface(surface: TextureView?)
     fun togglePlay()
@@ -74,6 +76,9 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
     private val app = context.applicationContext
     private val holder = PlayerHolder.getInstance()
     private val request = SerialDisposable()
+    private val prefetchRequest = SerialDisposable()
+    private var requestedStreamId: String? = null
+    private var localFirstFrame = false
     private val playback = MutableStateFlow(PlaybackState())
     private val metadata = MutableStateFlow<StreamInfo?>(null)
     private var surface: TextureView? = null
@@ -148,6 +153,8 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
     private fun trackState(state: PlaybackState, player: ExoPlayer): PlaybackState {
         val groups = player.currentTracks.groups
         return state.copy(
+            firstFrame = if (sample != null) localFirstFrame else requestedStreamId != null &&
+                requestedStreamId == connected?.bilaiRenderedStreamId,
             ended = player.playbackState == ExoPlayer.STATE_ENDED,
             videoWidth = player.videoSize.width,
             videoHeight = player.videoSize.height,
@@ -175,12 +182,14 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         main.removeCallbacks(pollSample)
         sample?.release()
         sample = null
+        localFirstFrame = false
     }
     override val state: StateFlow<PlaybackState> = playback
     override val current: StateFlow<StreamInfo?> = metadata
 
     override fun play(url: String, startMs: Long) {
         releaseSample()
+        requestedStreamId = null
         playback.value = PlaybackState()
         metadata.value = null
         val debugFixture = Uri.parse(url)
@@ -194,6 +203,7 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         request.set(ExtractorHelper.getStreamInfo(ServiceList.YouTube.serviceId, url, false)
             .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
             .subscribe({ info ->
+                requestedStreamId = info.id
                 metadata.value = info
                 val intent = NavigationHelper.getPlayerIntent(
                     app, DeviceUtils.getPlayerServiceClass(), SinglePlayQueue(info, startMs), false, true,
@@ -201,6 +211,12 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
                 ContextCompat.startForegroundService(app, intent)
                 holder.startService(false, this)
             }, { playback.value = PlaybackState(error = true) }))
+    }
+
+    override fun prefetch(url: String) {
+        if (!url.startsWith("https://")) return
+        prefetchRequest.set(ExtractorHelper.getStreamInfo(ServiceList.YouTube.serviceId, url, false)
+            .subscribeOn(Schedulers.io()).subscribe({}, {}))
     }
 
     override fun playOffline(uri: Uri) {
@@ -217,6 +233,9 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
         sample = ExoPlayer.Builder(app).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             setVideoTextureView(surface)
+            addListener(object : com.google.android.exoplayer2.Player.Listener {
+                override fun onRenderedFirstFrame() { localFirstFrame = true }
+            })
             prepare()
             seekTo(startMs)
             playWhenReady = true
@@ -251,6 +270,7 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
     override fun detach() {
         releaseSample()
         request.dispose()
+        prefetchRequest.dispose()
         attachSurface(null)
         if (holder.listener === this) holder.setListener(null)
     }
@@ -263,6 +283,7 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
     override fun onServiceStopped() { connected = null; playback.value = PlaybackState() }
     override fun onQueueUpdate(queue: PlayQueue) = Unit
     override fun onMetadataUpdate(info: StreamInfo, queue: PlayQueue) {
+        if (info.id != requestedStreamId) return
         metadata.value = info
         setCaptions(captionLanguage)
         setLoop(loop)

@@ -635,7 +635,7 @@ private fun Modifier.watchClick(enabled: Boolean, action: () -> Unit) =
     if (enabled) clickable(onClick = action) else this
 
 
-private fun watchCount(count: Long): String {
+internal fun watchCount(count: Long): String {
     if (count < 0) return ""
     val (divisor, unit) = when {
         count >= 1_000_000_000 -> 1_000_000_000 to "B"

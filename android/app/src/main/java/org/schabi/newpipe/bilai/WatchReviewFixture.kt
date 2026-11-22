@@ -15,7 +15,8 @@ internal object WatchReviewFixture {
     private const val URL = "https://www.youtube.com/watch?v=fixture0000"
     private const val AVATAR = "bilai-review://avatar"
 
-    fun stream(uri: String) = StreamInfo(0, "fixture0000", uri, "A quiet morning in the mountains").apply {
+    fun stream(uri: String) = StreamInfo(0, "fixture0000", uri, if (uri.contains("#short-")) "Mountain Short ${uri.substringAfter("#short-")}"
+            else "A quiet morning in the mountains").apply {
         uploaderName = CHANNEL
         uploaderAvatarUrl = AVATAR
         uploaderUrl = "https://www.youtube.com/channel/UC0000000000000000000000"
@@ -34,6 +35,14 @@ internal object WatchReviewFixture {
                 viewCount = 91_000L + index * 1_000
                 uploadDate = date
             }
+        }
+    }
+
+    fun shorts(uri: String) = (1..2).map { index ->
+        StreamInfoItem(0, "$uri#short-$index", "Mountain Short $index", StreamType.VIDEO_STREAM).apply {
+            uploaderName = CHANNEL
+            uploaderAvatarUrl = AVATAR
+            thumbnailUrl = "bilai-review://thumbnail/$index"
         }
     }
 

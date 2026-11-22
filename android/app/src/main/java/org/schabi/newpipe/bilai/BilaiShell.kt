@@ -276,6 +276,8 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     private val prefs = activity.getSharedPreferences("bilai_appearance", Context.MODE_PRIVATE)
     private var debugDark by mutableStateOf<Boolean?>(null)
+    private var debugShorts by mutableStateOf<List<StreamInfoItem>?>(null)
+    private var shortsComments by mutableStateOf<String?>(null)
     private var initialShortUrl by mutableStateOf<String?>(null)
     private var hideShorts by mutableStateOf(prefs.getBoolean("hide_shorts", false))
     private var red by mutableStateOf(false)
@@ -352,6 +354,10 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     private fun applyDebugIntent(intent: Intent) {
         if (!BuildConfig.DEBUG) return
+        if (intent.getBooleanExtra("bt.shorts_fixture", false)) {
+            val uri = Uri.fromFile(java.io.File(activity.filesDir.parentFile, "sample.mp4")).toString()
+            debugShorts = WatchReviewFixture.shorts(uri)
+        }
         if (intent.hasExtra("bt.dark")) debugDark = intent.getBooleanExtra("bt.dark", false)
         when (intent.getStringExtra("bt.accent")) {
             "amber" -> red = false
@@ -404,10 +410,10 @@ class BilaiShell(private val activity: ComponentActivity) {
             SideEffect {
                 val window = activity.window
                 window.statusBarColor = colors.bg.toArgb()
-                window.navigationBarColor = colors.surface.toArgb()
+                window.navigationBarColor = if (tab == Tab.SHORTS) android.graphics.Color.BLACK else colors.surface.toArgb()
                 WindowCompat.getInsetsController(window, view).apply {
                     isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
+                    isAppearanceLightNavigationBars = !dark && tab != Tab.SHORTS
                 }
             }
             Box(Modifier.fillMaxSize().background(colors.bg).then(if (videoOnly) Modifier else Modifier.systemBarsPadding()).background(colors.outerBg)
@@ -428,8 +434,9 @@ class BilaiShell(private val activity: ComponentActivity) {
                                     initialShortUrl = url
                                     select(Tab.SHORTS)
                                 }, ::openVideoMenu)
-                                Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl,
-                                    { react(Reaction.LIKE) }, ::subscribeTo, ::share)
+                                Tab.SHORTS -> ShortsTab(homeFeed, engine, initialShortUrl, debugShorts,
+                                    { react(Reaction.LIKE) }, { react(Reaction.DISLIKE) },
+                                    { shortsComments = it; overlay = "Comments" }, ::subscribeTo, ::share)
                                 Tab.SUBS -> SubscriptionsTab(::play, ::openVideoMenu)
                                 Tab.YOU -> YouTab(dark, signedIn, ::play, { overlay = it }, sponsorBlock, ::toggleSponsorBlock, hideShorts) {
                                     hideShorts = !hideShorts
@@ -570,7 +577,7 @@ class BilaiShell(private val activity: ComponentActivity) {
                         BasicText(info?.description?.content.orEmpty(),
                             style = TextStyle(color = p.text, fontSize = 12.sp, lineHeight = 18.sp))
                     }
-                    "Comments" -> Comments(video?.first.orEmpty())
+                    "Comments" -> Comments((if (tab == Tab.SHORTS) shortsComments else video?.first).orEmpty())
                     "Sign in to continue" -> {
                         FeedText("Like, subscribe and comment need your Google account", 12, p.muted)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -947,7 +954,7 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 }
 
-private fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
+internal fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
 
 @Composable
 private fun Header(home: () -> Unit, openUrl: () -> Unit, search: () -> Unit, notify: () -> Unit) {
@@ -1008,6 +1015,7 @@ private fun BottomNav(active: Tab, select: (Tab) -> Unit) {
 }
 
 internal enum class Glyph(data: String) {
+    COMMENT("M4 4h16v12H9l-5 4Z M8 9h8 M8 12h5"),
     THUMB_UP("M7 10v11 M14 5l-1 5h6a2 2 0 0 1 2 2l-2 7a2 2 0 0 1-2 2H7l-4-1v-9l4-1 5-7a2 2 0 0 1 2 2Z"),
     THUMB_DOWN("M7 14V3 M14 19l-1-5h6a2 2 0 0 0 2-2l-2-7a2 2 0 0 0-2-2H7L3 4v9l4 1 5 7a2 2 0 0 0 2-2Z"),
     SHARE("M8 11 16 6 M8 13l8 5 M9 12a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M22 5a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M22 19a3 3 0 1 1-6 0 3 3 0 1 1 6 0"),

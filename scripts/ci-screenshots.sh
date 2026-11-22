@@ -198,5 +198,17 @@ sleep 2
 dump_ui "$out/offline_playback.xml" 'Offline sample'
 if grep -q "Couldn't play" "$out/offline_playback.xml"; then exit 1; fi
 adb exec-out screencap -p > "$out/offline_playback.png"
+adb shell am force-stop "$pkg"
+adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity" \
+  --ez bt.dark true --es bt.accent amber --es bt.tab shorts --ez bt.shorts_fixture true
+dump_ui "$out/shorts_full.xml" short_frame_1
+adb exec-out screencap -p > "$out/shorts_full.png"
+adb shell input swipe 565 1760 565 400 2200 &
+short_swipe=$!
+sleep .7
+adb exec-out screencap -p > "$out/shorts_mid_swipe.png"
+wait "$short_swipe"
+dump_ui "$out/shorts_next.xml" short_frame_2
+adb exec-out screencap -p > "$out/shorts_next.png"
 adb logcat -d -v time > "$out/logcat.txt"
 adb shell dumpsys gfxinfo "$pkg" > "$out/gfxinfo.txt"

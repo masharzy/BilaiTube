@@ -8,6 +8,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,12 +44,14 @@ import org.schabi.newpipe.util.ExtractorHelper
 
 @Composable
 internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialUrl: String?,
-                       like: () -> Unit, subscribe: (String) -> Unit, share: (String) -> Unit) {
+                       fixture: List<StreamInfoItem>?, like: () -> Unit, dislike: () -> Unit,
+                       comments: (String) -> Unit, subscribe: (String) -> Unit, share: (String) -> Unit) {
     val p = LocalBilaiColors.current
     var fallback by remember { mutableStateOf<List<StreamInfoItem>>(emptyList()) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(attempt) {
+    LaunchedEffect(attempt, fixture) {
+        if (fixture != null) return@LaunchedEffect
         home.start()
         failed = false
         fallback = withContext(Dispatchers.IO) {
@@ -56,7 +66,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
         }
         failed = fallback.isEmpty()
     }
-    val clips = (home.shortItems + fallback).distinctBy { it.url }
+    val clips = fixture ?: (home.shortItems + fallback).distinctBy { it.url }
     val initialPage = clips.indexOfFirst { it.url == initialUrl }.coerceAtLeast(0)
     val pager = rememberPagerState(initialPage = initialPage) { clips.size }
     var placed by remember(initialUrl) { mutableStateOf(false) }
@@ -66,9 +76,13 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
             placed = true
         }
     }
-    val active = clips.getOrNull(pager.settledPage)
+    val active = clips.getOrNull(pager.currentPage)
     val state by engine.state.collectAsState()
-    LaunchedEffect(active?.url) { active?.let { engine.play(it.url) } }
+    val metadata by engine.current.collectAsState()
+    LaunchedEffect(active?.url) {
+        active?.let { engine.play(it.url) }
+        clips.getOrNull(pager.currentPage + 1)?.let { engine.prefetch(it.url) }
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (clips.isEmpty()) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -76,32 +90,80 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
                 if (failed) WatchPill("Retry", p.onAccent, p.accent) { attempt++ }
             }
         } else {
-            AndroidView(factory = { context -> TextureView(context).also(engine::attachSurface) },
-                modifier = Modifier.align(Alignment.Center).fillMaxWidth().fillMaxHeight(.72f))
-            VerticalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+            VerticalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+                key = { clips[it].url },
+                flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = spring(.78f, 320f))) { page ->
                 val clip = clips[page]
-                Box(Modifier.fillMaxSize().clickable(onClick = engine::togglePlay)) {
-                    if (page != pager.settledPage || state.videoWidth == 0) NetImage(clip.thumbnailUrl, Modifier.fillMaxSize())
-                    Column(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 64.dp, bottom = 24.dp)) {
+                val ownsPlayback = page == pager.currentPage
+                val info = metadata?.takeIf { ownsPlayback && it.url == clip.url }
+                Box(Modifier.fillMaxSize().background(Color.Black).clickable {
+                    if (ownsPlayback) engine.togglePlay()
+                }) {
+                    if (ownsPlayback) AndroidView(factory = { TextureView(it).also(engine::attachSurface) },
+                        modifier = Modifier.fillMaxSize(), update = { texture ->
+                            val w = state.videoWidth
+                            val h = state.videoHeight
+                            if (texture.width > 0 && texture.height > 0 && w > 0 && h > 0) {
+                                val ratio = (w.toFloat() / h) / (texture.width.toFloat() / texture.height)
+                                texture.setTransform(android.graphics.Matrix().apply {
+                                    setScale(ratio.coerceAtLeast(1f), (1f / ratio).coerceAtLeast(1f),
+                                        texture.width / 2f, texture.height / 2f)
+                                })
+                            }
+                        })
+                    if (info != null && state.firstFrame) Box(Modifier.size(1.dp)
+                        .debugTag("short_frame_${page + 1}"))
+                    AnimatedVisibility(info == null || !state.firstFrame, exit = fadeOut(tween(150))) {
+                        NetImage(clip.thumbnailUrl, Modifier.fillMaxSize())
+                    }
+                    Box(Modifier.fillMaxWidth().height(130.dp).align(Alignment.TopCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .65f), Color.Transparent))))
+                    Box(Modifier.fillMaxWidth().height(190.dp).align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .85f)))))
+                    Column(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 64.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            NetImage(clip.uploaderAvatarUrl, Modifier.size(32.dp).clip(CircleShape), avatar = true)
-                            FeedText(clip.uploaderName.orEmpty(), 12, Color.White, FontWeight.Bold)
-                            WatchPill("Subscribe", p.onAccent, p.accent) { clip.uploaderUrl?.let(subscribe) }
+                            NetImage(info?.uploaderAvatarUrl ?: clip.uploaderAvatarUrl,
+                                Modifier.size(32.dp).clip(CircleShape), avatar = true)
+                            val uploader = (info?.uploaderName ?: clip.uploaderName).orEmpty()
+                                .takeUnless { it == "YouTube Shorts" }.orEmpty()
+                            val channel = info?.uploaderUrl ?: clip.uploaderUrl
+                            val handle = channel?.let { android.net.Uri.parse(it).lastPathSegment }
+                                ?.takeIf { it.startsWith("@") }
+                            if (!handle.isNullOrBlank() || uploader.isNotBlank()) {
+                                Box(Modifier.weight(1f, fill = false)) {
+                                    FeedText(handle ?: uploader, 12, Color.White, FontWeight.Bold)
+                                }
+                            }
+                            if (!channel.isNullOrBlank()) WatchPill("Subscribe", p.onAccent, p.accent) { subscribe(channel) }
                         }
-                        FeedText(clip.name, 14, Color.White, FontWeight.Medium)
+                        FeedText(info?.name ?: clip.name, 14, Color.White, FontWeight.Medium)
+                    }
+                    Column(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 80.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ShortsAction(Glyph.THUMB_UP, "Like", watchCount(info?.likeCount ?: -1), like)
+                        ShortsAction(Glyph.THUMB_DOWN, "Dislike", watchCount(info?.dislikeCount ?: -1), dislike)
+                        ShortsAction(Glyph.COMMENT, "Comments", "") { comments(clip.url) }
+                        ShortsAction(Glyph.SHARE, "Share", "") { share(clip.url) }
+                    }
+                    if (ownsPlayback && state.error) Box(Modifier.align(Alignment.Center)) {
+                        WatchPill("Retry video", p.onAccent, p.accent) { engine.play(clip.url) }
                     }
                 }
             }
-            if (state.error) Box(Modifier.align(Alignment.Center)) {
-                WatchPill("Retry video", p.onAccent, p.accent) { active?.let { engine.play(it.url) } }
-            }
-            Column(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 80.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                WatchPill("Like", Color.White, Color.Black.copy(alpha = .45f), click = like)
-                active?.let { WatchPill("Share", Color.White, Color.Black.copy(alpha = .45f)) { share(it.url) } }
-            }
         }
         Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { FeedText("Shorts", 16, Color.White, FontWeight.Bold) }
+    }
+}
+
+@Composable
+private fun ShortsAction(glyph: Glyph, label: String, count: String, action: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .45f))
+            .clickable(onClick = action).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+            Icon(glyph, Color.White, Modifier.size(19.dp))
+        }
+        if (count.isNotEmpty()) FeedText(count, 11, Color.White)
     }
 }
 

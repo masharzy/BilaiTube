@@ -1005,7 +1005,15 @@ public final class Player {
         }
     }
 
+    private String bilaiRenderedStreamId;
+
+    @Nullable
+    public String getBilaiRenderedStreamId() {
+        return bilaiRenderedStreamId;
+    }
+
     void onRenderedFirstFrame() {
+        bilaiRenderedStreamId = getCurrentStreamInfo().map(StreamInfo::getId).orElse(null);
         PlaybackStartupTrace.finish(startupTraceId);
         layoutController.onRenderedFirstFrame();
     }
@@ -1082,6 +1090,9 @@ public final class Player {
     public void setBilaiSurface(@Nullable final android.view.TextureView surface) {
         final android.view.TextureView previous = bilaiSurface;
         bilaiSurface = surface;
+        if (previous != surface) {
+            bilaiRenderedStreamId = null;
+        }
         if (exoPlayerIsNull()) {
             return;
         }
