@@ -354,22 +354,25 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
                 ProfileRow("Return YouTube Dislike", if (dislike) "ON" else "OFF") {
                     dislike = !dislike; prefs.edit().putBoolean(dislikeKey, dislike).apply()
                 }
-                ProfileRow("Hide Shorts from Home", if (hideShorts) "ON" else "OFF", click = toggleHideShorts)
+                ProfileRow("Hide Shorts from Home", if (hideShorts) "ON" else "OFF", last = true, click = toggleHideShorts)
             }
         }
     }
 }
 
 @Composable
-private fun ProfileRow(title: String, value: String, glyph: Glyph? = null, click: () -> Unit) {
+private fun ProfileRow(title: String, value: String, glyph: Glyph? = null, last: Boolean = false, click: () -> Unit) {
     val p = LocalBilaiColors.current
-    Row(Modifier.fillMaxWidth().clickable(onClick = click).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        if (glyph != null) {
-            Icon(glyph, p.accent, Modifier.size(18.dp))
-            Spacer(Modifier.width(12.dp))
+    Column {
+        Row(Modifier.fillMaxWidth().clickable(onClick = click).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            if (glyph != null) {
+                Icon(glyph, p.accent, Modifier.size(18.dp))
+                Spacer(Modifier.width(12.dp))
+            }
+            Box(Modifier.weight(1f)) { FeedText(title, 12, p.text) }
+            FeedText(value, 12, if (value == "ON") Color(0xff10b981) else p.muted, FontWeight.Bold)
         }
-        Box(Modifier.weight(1f)) { FeedText(title, 12, p.text) }
-        FeedText(value, 12, if (value == "ON") Color(0xff10b981) else p.muted, FontWeight.Bold)
+        if (!last) Box(Modifier.fillMaxWidth().height(1.dp).background(p.border))
     }
 }
