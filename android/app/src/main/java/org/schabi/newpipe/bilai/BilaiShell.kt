@@ -141,7 +141,10 @@ class BilaiShell(private val activity: ComponentActivity) {
         BilaiAccountStore.load(activity) != null,
     )
 
-    fun setPictureInPicture(enabled: Boolean) { pip = enabled }
+    fun setPictureInPicture(enabled: Boolean) {
+        pip = enabled
+        if (BuildConfig.DEBUG) android.util.Log.i("BilaiPip", "Mode changed: $enabled")
+    }
 
     private fun enterPictureInPicture() {
         if (Build.VERSION.SDK_INT < 26 || video == null ||

@@ -140,7 +140,14 @@ if adb shell pm list features | grep -q android.software.picture_in_picture; the
   adb shell am broadcast -a com.masharzy.bilaitube.DEBUG_UI --es bt.action enter_pip
   sleep 2
   adb shell dumpsys activity activities > "$out/pip_activity.txt"
+  grep -q 'com.masharzy.bilaitube.*mode=pinned' "$out/pip_activity.txt"
+  adb logcat -d -s BilaiPip:I > "$out/pip_callback.txt"
+  grep -q 'Mode changed: true' "$out/pip_callback.txt"
   adb exec-out screencap -p > "$out/player_pip.png"
+  adb shell am start -W -n "$pkg/org.schabi.newpipe.MainActivity"
+  dump_ui "$out/player_pip_restored.xml" player_surface
+  adb logcat -d -s BilaiPip:I > "$out/pip_callback.txt"
+  grep -q 'Mode changed: false' "$out/pip_callback.txt"
 fi
 adb logcat -d -v time > "$out/logcat.txt"
 adb shell dumpsys gfxinfo "$pkg" > "$out/gfxinfo.txt"
