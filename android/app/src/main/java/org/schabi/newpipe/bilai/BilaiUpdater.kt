@@ -44,28 +44,48 @@ internal object BilaiUpdater {
         connectTimeout = 15_000
         readTimeout = 30_000
         instanceFollowRedirects = true
+        useCaches = false
         setRequestProperty("User-Agent", "BilaiTube/" + BuildConfig.VERSION_NAME)
         setRequestProperty("Accept", "application/vnd.github+json")
     }
 
-    /** Returns the newest release if it is newer than this build, else null. */
-    suspend fun check(): Release? = withContext(Dispatchers.IO) {
-        runCatching {
-            val connection = open("https://api.github.com/repos/$REPO/releases/latest")
-            if (connection.responseCode !in 200..299) return@runCatching null
-            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            val version = json.optString("tag_name").removePrefix("v")
-            if (version.isBlank() || !isNewer(version, BuildConfig.VERSION_NAME)) return@runCatching null
-            val assets = json.optJSONArray("assets") ?: return@runCatching null
-            val apks = (0 until assets.length()).map { assets.getJSONObject(it) }
-                .filter { it.optString("name").endsWith(".apk") }
-            val abi = Build.SUPPORTED_ABIS.firstOrNull { abi -> apks.any { it.optString("name").contains(abi) } }
-            val asset = apks.firstOrNull { abi != null && it.optString("name").contains(abi) }
-                ?: apks.firstOrNull { it.optString("name").contains("universal") }
-                ?: apks.firstOrNull() ?: return@runCatching null
-            Release(version, json.optString("body").trim(), asset.optString("browser_download_url"),
-                asset.optString("name"), asset.optLong("size"))
-        }.getOrNull()
+    /**
+     * The newest release if it is newer than this build, null when this build is current.
+     * Fails (instead of claiming "latest") when GitHub couldn't be asked — e.g. the API's
+     * 60-requests-an-hour limit, which mobile networks sharing one IP hit quickly.
+     */
+    suspend fun check(): Result<Release?> = withContext(Dispatchers.IO) {
+        runCatching { fromApi() }.recoverCatching { fromWebsite() }
+    }
+
+    private fun fromApi(): Release? {
+        val connection = open("https://api.github.com/repos/$REPO/releases/latest")
+        check(connection.responseCode in 200..299) { "GitHub API HTTP ${connection.responseCode}" }
+        val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        val version = json.optString("tag_name").removePrefix("v")
+        check(version.isNotBlank()) { "No version" }
+        if (!isNewer(version, BuildConfig.VERSION_NAME)) return null
+        val assets = json.optJSONArray("assets") ?: error("No files")
+        val apks = (0 until assets.length()).map { assets.getJSONObject(it) }
+            .filter { it.optString("name").endsWith(".apk") }
+        val abi = Build.SUPPORTED_ABIS.firstOrNull { abi -> apks.any { it.optString("name").contains(abi) } }
+        val asset = apks.firstOrNull { abi != null && it.optString("name").contains(abi) }
+            ?: apks.firstOrNull { it.optString("name").contains("universal") }
+            ?: apks.firstOrNull() ?: error("No APK")
+        return Release(version, json.optString("body").trim(), asset.optString("browser_download_url"),
+            asset.optString("name"), asset.optLong("size"))
+    }
+
+    /** No API limit: github.com/…/releases/latest redirects to the newest tag. */
+    private fun fromWebsite(): Release? {
+        val connection = open("https://github.com/$REPO/releases/latest").apply { instanceFollowRedirects = false }
+        val location = connection.getHeaderField("Location") ?: error("GitHub HTTP ${connection.responseCode}")
+        val version = location.substringAfterLast("/tag/", "").removePrefix("v")
+        check(version.isNotBlank()) { "No version" }
+        if (!isNewer(version, BuildConfig.VERSION_NAME)) return null
+        val abi = Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "armeabi-v7a", "x86_64") } ?: "arm64-v8a"
+        val name = "BilaiTube_$version-$abi-release.apk"
+        return Release(version, "", "https://github.com/$REPO/releases/download/v$version/$name", name, -1L)
     }
 
     /** Downloads the APK into the cache, reporting progress 0..1. */
@@ -103,7 +123,7 @@ internal object BilaiUpdater {
                         }
                     }
                 }
-                if (release.size > 0 && part.length() != release.size) { part.delete(); return@runCatching null }
+                if (total > 0 && part.length() != total) { part.delete(); return@runCatching null }
                 if (!part.renameTo(target)) return@runCatching null
                 target
             }.getOrNull()

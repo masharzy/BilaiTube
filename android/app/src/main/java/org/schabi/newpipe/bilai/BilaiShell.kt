@@ -788,9 +788,11 @@ class BilaiShell(private val activity: ComponentActivity) {
             // Every launch checks, so nobody misses an update; "Later" only hides it until next time.
             if (!manual && (BuildConfig.DEBUG || autoChecked)) return@LaunchedEffect
             autoChecked = true
-            val found = BilaiUpdater.check()
+            val result = BilaiUpdater.check()
+            val found = result.getOrNull()
             if (found != null) update = found
-            else if (manual) toast = "You're on the latest version (${BuildConfig.VERSION_NAME})"
+            else if (manual) toast = if (result.isFailure) "Couldn't reach GitHub. Check your connection and try again"
+                else "You're on the latest version (${BuildConfig.VERSION_NAME})"
         }
         val release = update ?: return
         val p = LocalBilaiColors.current

@@ -1,0 +1,2 @@
+- Update check works even when GitHub's API limit is reached
+- Shows a connection error instead of a false "latest version"
