@@ -1,0 +1,4 @@
+- Update check on every launch; the update downloads once and installs by itself after you allow it
+- Option to download the update from GitHub instead
+- Faster start for videos and Shorts (shorter start buffer, prefetching)
+- Filled like/dislike icons with animation and updated counts

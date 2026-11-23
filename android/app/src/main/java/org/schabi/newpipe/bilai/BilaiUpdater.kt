@@ -72,9 +72,11 @@ internal object BilaiUpdater {
     suspend fun download(context: Context, release: Release, progress: (Float) -> Unit): File? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-                dir.listFiles()?.forEach { it.delete() }
-                val target = File(dir, "BilaiTube-${release.version}.apk")
+                val target = cached(context, release)
+                // Already downloaded (e.g. before granting the install permission): don't fetch again.
+                if (target.exists() && (release.size <= 0 || target.length() == release.size)) return@runCatching target
+                target.parentFile?.listFiles()?.forEach { if (it != target) it.delete() }
+                val part = File(target.path + ".part")
                 var url = release.apkUrl
                 var connection = open(url)
                 // GitHub answers with a redirect to its download host.
@@ -89,7 +91,7 @@ internal object BilaiUpdater {
                 if (connection.responseCode !in 200..299) return@runCatching null
                 val total = connection.contentLengthLong.takeIf { it > 0 } ?: release.size
                 connection.inputStream.use { input ->
-                    target.outputStream().use { output ->
+                    part.outputStream().use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var done = 0L
                         while (true) {
@@ -101,9 +103,28 @@ internal object BilaiUpdater {
                         }
                     }
                 }
+                if (release.size > 0 && part.length() != release.size) { part.delete(); return@runCatching null }
+                if (!part.renameTo(target)) return@runCatching null
                 target
             }.getOrNull()
         }
+
+    fun cached(context: Context, release: Release): File =
+        File(File(context.cacheDir, "updates").apply { mkdirs() }, "BilaiTube-${release.version}.apk")
+
+    fun isDownloaded(context: Context, release: Release): Boolean = cached(context, release).let {
+        it.exists() && (release.size <= 0 || it.length() == release.size)
+    }
+
+    fun canInstall(context: Context) =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+
+    fun openReleasePage(context: Context) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/$REPO/releases/latest"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
 
     /** Opens the system installer. Returns false when the user first has to allow installs from BilaiTube. */
     fun install(context: Context, apk: File): Boolean {

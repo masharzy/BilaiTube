@@ -36,6 +36,8 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -190,6 +192,12 @@ class BilaiShell(private val activity: ComponentActivity) {
     fun onResume() {
         backgroundRequested = false
         pipClosed = false
+        // Back from "Install unknown apps": continue with the APK that's already downloaded.
+        val release = update
+        if (awaitingInstallPermission && release != null && BilaiUpdater.canInstall(activity)) {
+            awaitingInstallPermission = false
+            if (BilaiUpdater.isDownloaded(activity, release)) BilaiUpdater.install(activity, BilaiUpdater.cached(activity, release))
+        }
     }
 
     /**
@@ -238,6 +246,7 @@ class BilaiShell(private val activity: ComponentActivity) {
 
     private val accountRequests = CompositeDisposable()
     private val reactions = mutableStateMapOf<String, Reaction>()
+    private val serverReactions = mutableStateMapOf<String, Reaction>()
     private val subscriptions = mutableStateMapOf<String, Boolean>()
     private val pendingAccountActions = mutableStateMapOf<String, Boolean>()
 
@@ -545,6 +554,17 @@ class BilaiShell(private val activity: ComponentActivity) {
         val list = rememberLazyListState()
         LaunchedEffect(hideShorts) { homeFeed.hideShorts = hideShorts }
         LaunchedEffect(scrollHome) { if (scrollHome > 0) list.scrollToItem(0) }
+        // When Home stops scrolling, pre-extract the videos on screen so a tap plays right away.
+        LaunchedEffect(list) {
+            snapshotFlow {
+                if (list.isScrollInProgress) emptyList() else list.layoutInfo.visibleItemsInfo
+                    .mapNotNull { (it.key as? String)?.takeIf { key -> key.startsWith("v-") }?.removePrefix("v-") }.take(2)
+            }.collectLatest { urls ->
+                if (urls.isEmpty()) return@collectLatest
+                kotlinx.coroutines.delay(400)
+                urls.forEach(engine::prefetch)
+            }
+        }
         BackHandler(enabled = overlay != null || (video != null && !compact) || tab != Tab.HOME) {
             when {
                 sheet != null -> sheet = null
@@ -685,13 +705,17 @@ class BilaiShell(private val activity: ComponentActivity) {
                             val known = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 runCatching { YoutubeAccountActions.state(id) }.getOrNull()
                             } ?: return@LaunchedEffect
+                            known.reaction?.let { serverReactions[id] = it }
                             if (pendingAccountActions[id] != true) known.reaction?.let { reactions[id] = it }
                             if (channel != null && pendingAccountActions[channel] != true) known.subscribed?.let { subscriptions[channel] = it }
                         }
                         val reaction = reactions[metadata?.id] ?: Reaction.NONE
+                        val original = serverReactions[metadata?.id] ?: Reaction.NONE
+                        fun delta(r: Reaction) = (if (reaction == r) 1L else 0L) - (if (original == r) 1L else 0L)
                         Watch(url, title, engine, compact, { compact = it }, videoOnly, ::requestFullscreen, playbackSpeed, pip,
                             captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
                             liked = reaction == Reaction.LIKE, disliked = reaction == Reaction.DISLIKE,
+                            likeDelta = delta(Reaction.LIKE), dislikeDelta = delta(Reaction.DISLIKE),
                             subscribed = subscriptions[metadata?.uploaderUrl] == true,
                             close = { requestFullscreen(false); engine.stop(); video = null; toast = "Mini-player dismissed" },
                             playNext = ::play,
@@ -754,16 +778,18 @@ class BilaiShell(private val activity: ComponentActivity) {
     private var update by mutableStateOf<BilaiUpdater.Release?>(null)
     private var updateProgress by mutableStateOf<Float?>(null)
     private var manualUpdateCheck by mutableIntStateOf(0)
+    private var autoChecked = false
+    private var awaitingInstallPermission by mutableStateOf(false)
 
     @Composable
     private fun UpdateChecker() {
         LaunchedEffect(manualUpdateCheck) {
             val manual = manualUpdateCheck > 0
-            val last = prefs.getLong("update_checked_at", 0L)
-            if (!manual && (BuildConfig.DEBUG || System.currentTimeMillis() - last < 6 * 3_600_000L)) return@LaunchedEffect
-            prefs.edit().putLong("update_checked_at", System.currentTimeMillis()).apply()
+            // Every launch checks, so nobody misses an update; "Later" only hides it until next time.
+            if (!manual && (BuildConfig.DEBUG || autoChecked)) return@LaunchedEffect
+            autoChecked = true
             val found = BilaiUpdater.check()
-            if (found != null && (manual || prefs.getString("update_skipped", null) != found.version)) update = found
+            if (found != null) update = found
             else if (manual) toast = "You're on the latest version (${BuildConfig.VERSION_NAME})"
         }
         val release = update ?: return
@@ -795,21 +821,31 @@ class BilaiShell(private val activity: ComponentActivity) {
                     BText("Downloading… ${(progress * 100).toInt()}%", 12f, p.muted)
                 } else Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.weight(1f).clip(CircleShape).background(p.elevated).clickable {
-                        prefs.edit().putString("update_skipped", release.version).apply(); sheet.close()
+                        sheet.close()
                     }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                         BText("Later", 14f, p.text, FontWeight.SemiBold)
                     }
                     Box(Modifier.weight(1f).clip(CircleShape).background(p.accent).clickable {
-                        updateProgress = 0f
+                        if (!BilaiUpdater.isDownloaded(activity, release)) updateProgress = 0f
                         scope.launch {
                             val file = BilaiUpdater.download(activity, release) { updateProgress = it }
                             updateProgress = null
                             if (file == null) toast = "Update download failed"
-                            else if (!BilaiUpdater.install(activity, file)) toast = "Allow BilaiTube to install updates, then tap Update again"
+                            else if (!BilaiUpdater.install(activity, file)) awaitingInstallPermission = true
                         }
                     }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                        BText("Update now", 14f, p.onAccent, FontWeight.Bold)
+                        BText(if (BilaiUpdater.isDownloaded(activity, release)) "Install" else "Update now",
+                            14f, p.onAccent, FontWeight.Bold)
                     }
+                }
+                if (awaitingInstallPermission) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(p.elevated).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BText("Android asks once to allow updates from BilaiTube. Turn on \"Allow from this source\" " +
+                        "and come back — the install starts by itself, without downloading again.", 12f, p.text,
+                        maxLines = 5, lineHeight = 17f)
+                    BText("Don't want to allow it? Download from GitHub in your browser instead", 12f, p.accent,
+                        FontWeight.SemiBold, maxLines = 2,
+                        modifier = Modifier.clickable { BilaiUpdater.openReleasePage(activity) })
                 }
                 Spacer(Modifier.navigationBarsPadding())
             }

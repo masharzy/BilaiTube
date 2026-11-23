@@ -2,6 +2,7 @@ package org.schabi.newpipe.player.helper;
 
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.DefaultLoadControl;
+import com.google.android.exoplayer2.upstream.DefaultAllocator;
 
 public class LoadController extends DefaultLoadControl {
 
@@ -16,6 +17,12 @@ public class LoadController extends DefaultLoadControl {
     private long lastPositionUs = Long.MIN_VALUE;
 
     public LoadController(final long earlyBufferUs) {
+        // Start playing once ~0.7 s is buffered (ExoPlayer's default waits for 2.5 s), so a tap
+        // starts the video almost at once; after a stall wait 2 s so it doesn't stutter.
+        super(new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE),
+                DEFAULT_MIN_BUFFER_MS, DEFAULT_MAX_BUFFER_MS, 700, 2000,
+                DEFAULT_TARGET_BUFFER_BYTES, DEFAULT_PRIORITIZE_TIME_OVER_SIZE_THRESHOLDS,
+                DEFAULT_BACK_BUFFER_DURATION_MS, DEFAULT_RETAIN_BACK_BUFFER_FROM_KEYFRAME);
         this.earlyBufferUs = earlyBufferUs;
     }
 

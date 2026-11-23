@@ -19,6 +19,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
@@ -87,6 +91,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                    onCompact: (Boolean) -> Unit, fullscreen: Boolean, onFullscreen: (Boolean) -> Unit, speed: Float, pictureInPicture: Boolean,
                    captionsOn: Boolean, toggleCaptions: () -> Unit,
                    autoplay: Boolean, toggleAutoplay: () -> Unit, liked: Boolean, disliked: Boolean,
+                   likeDelta: Long = 0, dislikeDelta: Long = 0,
                    subscribed: Boolean, close: () -> Unit, playNext: (String, String) -> Unit,
                    autoplayNext: (String, String) -> Unit, overlay: (String) -> Unit) {
     val p = LocalBilaiColors.current
@@ -121,6 +126,10 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
     var loadingMore by remember(url) { mutableStateOf(false) }
     val recommendations = remember(url, related, more) {
         (related + more).filter { it.url != url }.distinctBy { it.url }
+    }
+    // Once this video runs, get the next ones ready so tapping Up Next (or autoplay) is instant.
+    LaunchedEffect(url, playback.firstFrame, related.size) {
+        if (playback.firstFrame) related.take(2).forEach { engine.prefetch(it.url) }
     }
     var autoplayCancelled by remember(url) { mutableStateOf(false) }
     val countdown = remember(url) { Animatable(1f) }
@@ -289,11 +298,13 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.clip(CircleShape).background(p.elevated), verticalAlignment = Alignment.CenterVertically) {
-                        WatchAction(Glyph.THUMB_UP, watchCount(info?.likeCount ?: -1), "Like",
-                            if (liked) p.accent else p.text, detailsTouchable) { overlay("Like") }
+                        val likes = info?.likeCount?.takeIf { it >= 0 }?.let { (it + likeDelta).coerceAtLeast(0) } ?: -1
+                        val dislikes = info?.dislikeCount?.takeIf { it >= 0 }?.let { (it + dislikeDelta).coerceAtLeast(0) } ?: -1
+                        ReactionAction(if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp, watchCount(likes), "Like",
+                            if (liked) p.accent else p.text, liked, detailsTouchable) { overlay("Like") }
                         Spacer(Modifier.width(1.dp).height(16.dp).background(Color.White.copy(alpha = .15f)))
-                        WatchAction(Glyph.THUMB_DOWN, watchCount(info?.dislikeCount ?: -1), "Dislike",
-                            if (disliked) p.accent else p.muted, detailsTouchable, horizontal = 12) { overlay("Dislike") }
+                        ReactionAction(if (disliked) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown, watchCount(dislikes), "Dislike",
+                            if (disliked) p.accent else p.muted, disliked, detailsTouchable, horizontal = 12) { overlay("Dislike") }
                     }
                     Box(Modifier.clip(CircleShape).background(p.elevated)) {
                         WatchAction(Glyph.SHARE, "Share", "Share", p.text, detailsTouchable) { overlay("Share") }
@@ -794,6 +805,24 @@ internal fun watchAge(date: DateWrapper?): String? {
         if (size > 0) return "$size $label${if (size == 1L) "" else "s"} ago"
     }
     return "Just now"
+}
+
+/** Like / dislike: filled icon with a little pop when it turns on, like YouTube. */
+@Composable
+private fun ReactionAction(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, label: String,
+                           color: Color, active: Boolean, enabled: Boolean, horizontal: Int = 14, click: () -> Unit) {
+    val pop = remember { Animatable(1f) }
+    var first by remember { mutableStateOf(true) }
+    LaunchedEffect(active) {
+        if (first) { first = false; return@LaunchedEffect }
+        if (active) { pop.snapTo(.7f); pop.animateTo(1f, spring(dampingRatio = .35f, stiffness = 500f)) }
+    }
+    Row(Modifier.watchClick(enabled, click).semantics { contentDescription = label }
+        .padding(horizontal = horizontal.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Icon(icon, null, Modifier.size(18.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }, tint = color)
+        if (text.isNotEmpty()) FeedText(text, 12, color, FontWeight.SemiBold)
+    }
 }
 
 @Composable

@@ -145,6 +145,7 @@ internal fun ShortsTab(home: HomeFeedViewModel, engine: PlaybackEngine, initialU
     LaunchedEffect(active?.url) {
         active?.let { engine.play(it.url) }
         clips.getOrNull(pager.currentPage + 1)?.let { engine.prefetch(it.url) }
+        clips.getOrNull(pager.currentPage + 2)?.let { engine.prefetch(it.url) }
     }
     LaunchedEffect(pager.currentPage, clips.size) {
         if (clips.isNotEmpty() && pager.currentPage >= clips.size - 4) loadMore()

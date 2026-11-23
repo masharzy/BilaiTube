@@ -328,10 +328,18 @@ internal class ServicePlaybackEngine(context: Context) : PlaybackEngine, PlayerS
             }, { playback.value = PlaybackState(error = true) }))
     }
 
+    /** Extracts a few likely-next videos ahead of time so tapping them starts at once (InfoCache). */
+    private val prefetched = object : LinkedHashMap<String, io.reactivex.rxjava3.disposables.Disposable>(8, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, io.reactivex.rxjava3.disposables.Disposable>?): Boolean {
+            if (size > 4) { eldest?.value?.dispose(); return true }
+            return false
+        }
+    }
+
     override fun prefetch(url: String) {
-        if (!url.startsWith("https://")) return
-        prefetchRequest.set(ExtractorHelper.getStreamInfo(ServiceList.YouTube.serviceId, url, false)
-            .subscribeOn(Schedulers.io()).subscribe({}, {}))
+        if (!url.startsWith("https://") || prefetched.containsKey(url)) return
+        prefetched[url] = ExtractorHelper.getStreamInfo(ServiceList.YouTube.serviceId, url, false)
+            .subscribeOn(Schedulers.io()).subscribe({}, { prefetched.remove(url) })
     }
 
     override fun playOffline(uri: Uri) {
