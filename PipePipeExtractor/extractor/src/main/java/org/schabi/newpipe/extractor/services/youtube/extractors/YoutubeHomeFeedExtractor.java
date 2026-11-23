@@ -153,14 +153,65 @@ public final class YoutubeHomeFeedExtractor {
                 .done()).getBytes(UTF_8);
         final JsonObject data = browse(body, localization);
         final JsonObject list = findFirstObject(data, "playlistVideoListRenderer", 0);
+        Page page = null;
         if (list != null) {
-            return parseItems(list.getArray("contents"), Collections.emptyList(), localization);
+            page = parseItems(list.getArray("contents"), Collections.emptyList(), localization);
         }
-        final JsonObject section = findFirstObject(data, "sectionListRenderer", 0);
-        if (section == null) {
-            return new Page(Collections.emptyList(), Collections.emptyList(), null);
+        if (page == null || page.items.isEmpty()) {
+            final JsonObject section = findFirstObject(data, "sectionListRenderer", 0);
+            if (section != null) {
+                page = parseItems(section.getArray("contents"), Collections.emptyList(), localization);
+            }
         }
-        return parseItems(section.getArray("contents"), Collections.emptyList(), localization);
+        if (page == null || page.items.isEmpty()) {
+            // Layouts change often (Watch Later especially): sweep the whole answer for videos.
+            page = deepScan(data, localization);
+        }
+        if (page.items.isEmpty() && page.continuation == null) {
+            final JsonObject alert = findFirstObject(data, "alertRenderer", 0);
+            final String message = alert != null ? getTextAtKeySafe(alert, "text") : null;
+            if (message != null && !message.isEmpty()) {
+                throw new ExtractionException(message);
+            }
+        }
+        return page;
+    }
+
+    /** Collects every video renderer and the first continuation found anywhere in {@code node}. */
+    @Nonnull
+    private static Page deepScan(final JsonObject data, final Localization localization) {
+        final StreamInfoItemsCollector collector =
+                new StreamInfoItemsCollector(ServiceList.YouTube.getServiceId());
+        final TimeAgoParser timeAgoParser = ServiceList.YouTube.getTimeAgoParser(localization);
+        final String[] continuation = new String[1];
+        deepScan(data, collector, timeAgoParser, continuation, 0);
+        return new Page(new ArrayList<>(collector.getItems()), Collections.emptyList(), continuation[0]);
+    }
+
+    private static void deepScan(final Object node, final StreamInfoItemsCollector collector,
+                                 final TimeAgoParser timeAgoParser, final String[] continuation,
+                                 final int depth) {
+        if (depth > MAX_DEPTH) {
+            return;
+        }
+        if (node instanceof JsonObject) {
+            final JsonObject obj = (JsonObject) node;
+            if (obj.has("playlistVideoRenderer") || obj.has("videoRenderer")
+                    || obj.has("gridVideoRenderer") || obj.has("lockupViewModel")
+                    || obj.has("continuationItemRenderer")) {
+                final JsonArray single = new JsonArray();
+                single.add(obj);
+                collect(single, collector, timeAgoParser, continuation, 0);
+                return;
+            }
+            for (final Object value : obj.values()) {
+                deepScan(value, collector, timeAgoParser, continuation, depth + 1);
+            }
+        } else if (node instanceof JsonArray) {
+            for (final Object value : (JsonArray) node) {
+                deepScan(value, collector, timeAgoParser, continuation, depth + 1);
+            }
+        }
     }
 
     /**

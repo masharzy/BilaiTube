@@ -1,0 +1,8 @@
+- Mini player stays on top of every page; back returns to where you were
+- Shorts pause your video and restore it as a mini player
+- New Background play switch in You
+- Loading thumbnail and spinner when opening a video; skeletons on the watch page
+- Swipes to and from fullscreen follow your finger
+- Liked and subscribed state from your account
+- Channel pages: 37.4M-style counts, video length, views and age
+- Watch Later fixes

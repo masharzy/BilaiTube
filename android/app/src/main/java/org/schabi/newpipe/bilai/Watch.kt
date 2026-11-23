@@ -18,6 +18,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.foundation.clickable
@@ -88,8 +90,13 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                    subscribed: Boolean, close: () -> Unit, playNext: (String, String) -> Unit,
                    autoplayNext: (String, String) -> Unit, overlay: (String) -> Unit) {
     val p = LocalBilaiColors.current
+    // Vertical "pull" that follows the finger for the fullscreen gestures (dp, negative = up).
+    val pull = remember { Animatable(0f) }
     val playback by engine.state.collectAsState()
-    val info by engine.current.collectAsState()
+    val currentInfo by engine.current.collectAsState()
+    // Never show the previous video's data while the next one loads.
+    val info = currentInfo?.takeIf { youtubeId(it.url) == youtubeId(url) || !url.startsWith("http") }
+    val loaded = info != null
     var preview by remember(url) { mutableStateOf<CommentsInfoItem?>(null) }
     var commentCount by remember(url) { mutableLongStateOf(-1L) }
     DisposableEffect(url, info?.id) {
@@ -249,8 +256,8 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 state = detailScroll, userScrollEnabled = detailsTouchable,
                 contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 144.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                item {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (!loaded) item(key = "skeleton") { WatchSkeleton(title) } else item(key = "details") {
+                Column(Modifier.watchFadeIn(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Column(Modifier.watchClick(detailsTouchable) { overlay("Description") },
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     FeedText(info?.name ?: title, 17, p.text, FontWeight.Bold)
@@ -321,8 +328,8 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                 FeedText("UP NEXT", 12, p.muted, FontWeight.Bold)
                 }
                 }
-                items(recommendations, key = { it.url }, contentType = { "related-video" }) { item ->
-                    Row(Modifier.fillMaxWidth().watchClick(detailsTouchable) { playNext(item.url, item.name) },
+                if (loaded) items(recommendations, key = { it.url }, contentType = { "related-video" }) { item ->
+                    Row(Modifier.animateItem().fillMaxWidth().watchClick(detailsTouchable) { playNext(item.url, item.name) },
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Box(Modifier.width(144.dp).aspectRatio(16f / 9).clip(RoundedCornerShape(12.dp))) {
                             NetImage(item.thumbnailUrl, Modifier.fillMaxSize())
@@ -350,6 +357,12 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             }
         }
         Box(Modifier.fillMaxWidth().height(if (fullscreen) maxHeight else fullHeight).graphicsLayer {
+            val lift = pull.value
+            translationY = lift * density
+            val stretch = if (fullscreen) 1f - (lift / 600f).coerceIn(0f, .1f) else 1f + (-lift / 500f).coerceIn(0f, .06f)
+            scaleX = stretch; scaleY = stretch
+            alpha = if (fullscreen) 1f - (lift / 900f).coerceIn(0f, .25f) else 1f
+        }.graphicsLayer {
             val t = if (fullscreen) 0f else motion.morph.coerceIn(0f, 1.12f)
             val clamped = t.coerceAtMost(1f)
             val scale = 1 - clamped * (1 - motion.miniWidth / motion.width.coerceAtLeast(1f))
@@ -371,6 +384,17 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
             }, modifier = Modifier.fillMaxSize(), update = { texture ->
                 if (videoWidth > 0 && videoHeight > 0) resizeTexture(texture)
             })
+            // Until the first frame of *this* video is drawn: its thumbnail and a spinner, never the
+            // previous video's last frame or a paused "00:00".
+            val ready = (loaded && playback.firstFrame) || playback.error || playback.ended
+            val posterAlpha by animateFloatAsState(if (ready) 0f else 1f, tween(if (ready) 220 else 0), label = "poster")
+            if (posterAlpha > .01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = posterAlpha }.background(Color.Black)) {
+                val id = youtubeId(url)
+                if (id != null) NetImage("https://i.ytimg.com/vi/$id/hqdefault.jpg", Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .35f)))
+                if (!miniVisualNow(motion, fullscreen)) androidx.compose.material3.CircularProgressIndicator(
+                    color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(40.dp))
+            }
             if (pictureInPicture) return@Box
             Box(Modifier.fillMaxSize().onGloballyPositioned { pointerCoordinates[0] = it }
                 .pointerInput(url, density, fullscreen) {
@@ -416,18 +440,28 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                                     }
                                     adjustment = "Volume · ${value * 100 / maxVolume}%"
                                 }
-                                canMorph && !fullscreen -> motion.move(delta.x / density, delta.y / density)
+                                fullscreen && delta.y > 0 && abs(delta.y) > abs(delta.x) ->
+                                    scope.launch { pull.snapTo(delta.y / density * .55f) }
+                                !fullscreen && !isMini && delta.y < 0 && abs(delta.y) > abs(delta.x) ->
+                                    scope.launch { pull.snapTo(delta.y / density * .45f) }
+                                canMorph && !fullscreen -> {
+                                    if (pull.value != 0f) scope.launch { pull.snapTo(0f) }
+                                    motion.move(delta.x / density, delta.y / density)
+                                }
                             }
                             change.consume()
                         }
                     } while (last.pressed)
                     val delta = (point - origin) / density
                     val v = tracker.calculateVelocity()
+                    val pulled = pull.value != 0f
+                    scope.launch { pull.animateTo(0f, spring(dampingRatio = .75f, stiffness = 380f)) }
                     if (canMorph && ((fullscreen && delta.y >= 16) || (!fullscreen && !isMini && delta.y <= -16 && abs(delta.y) > abs(delta.x)))) {
                         motion.release(0f, 0f, 0f, 0f)
                         onFullscreen(!fullscreen)
                         return@awaitEachGesture
                     }
+                    if (pulled) { motion.release(0f, 0f, 0f, 0f); return@awaitEachGesture }
                     if (!canMorph && delta.getDistance() >= 8) return@awaitEachGesture
                     if (canMorph && motion.release(if (fullscreen) 0f else delta.x, if (fullscreen) 0f else delta.y, v.x / density, v.y / density)) close()
                     else {
@@ -457,7 +491,7 @@ internal fun Watch(url: String, title: String, engine: PlaybackEngine, compact: 
                     if (uri.scheme in listOf("file", "content")) engine.playOffline(uri) else engine.play(url)
                 }
             }
-            val controlsAlpha by animateFloatAsState(if (controls && !miniVisual) 1f else 0f, tween(220),
+            val controlsAlpha by animateFloatAsState(if (controls && !miniVisual && ready) 1f else 0f, tween(220),
                 label = "player controls")
             val fraction = if (!scrub.isNaN()) scrub else if (playback.durationMs <= 0) 0f
                 else (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
@@ -701,6 +735,54 @@ internal fun watchCount(count: Long): String {
     }
     return String.format(java.util.Locale.ROOT, "%.1f", count.toDouble() / divisor).removeSuffix(".0") + unit
 }
+
+/** Content fades and rises in when data arrives, instead of popping in. */
+private fun Modifier.watchFadeIn(): Modifier = composed {
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, tween(320, easing = CubicBezierEasing(.22f, 1f, .36f, 1f))) }
+    graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 10.dp.toPx() }
+}
+
+/** Placeholder with the same sizes as the real watch details. */
+@Composable
+private fun WatchSkeleton(title: String) {
+    val p = LocalBilaiColors.current
+    val shimmer = rememberInfiniteTransition(label = "skeleton")
+    val pulse by shimmer.animateFloat(.55f, 1f, infiniteRepeatable(tween(800), androidx.compose.animation.core.RepeatMode.Reverse), label = "pulse")
+    val block = p.elevated.copy(alpha = pulse)
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (title.isNotBlank()) FeedText(title, 17, p.text, FontWeight.Bold)
+            else Box(Modifier.fillMaxWidth(.9f).height(20.dp).background(block, RoundedCornerShape(6.dp)))
+            Box(Modifier.fillMaxWidth(.5f).height(12.dp).background(block, RoundedCornerShape(4.dp)))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(36.dp).background(block, CircleShape))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.fillMaxWidth(.55f).height(13.dp).background(block, RoundedCornerShape(4.dp)))
+                Box(Modifier.fillMaxWidth(.35f).height(10.dp).background(block, RoundedCornerShape(4.dp)))
+            }
+            Box(Modifier.size(92.dp, 32.dp).background(block, CircleShape))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(120, 86, 108, 82).forEach { w -> Box(Modifier.size(w.dp, 36.dp).background(block, CircleShape)) }
+        }
+        Box(Modifier.fillMaxWidth().height(76.dp).background(block, RoundedCornerShape(16.dp)))
+        Box(Modifier.width(70.dp).height(12.dp).background(block, RoundedCornerShape(4.dp)))
+        repeat(4) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.width(144.dp).aspectRatio(16f / 9).background(block, RoundedCornerShape(12.dp)))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.fillMaxWidth().height(12.dp).background(block, RoundedCornerShape(4.dp)))
+                    Box(Modifier.fillMaxWidth(.7f).height(12.dp).background(block, RoundedCornerShape(4.dp)))
+                    Box(Modifier.fillMaxWidth(.5f).height(10.dp).background(block, RoundedCornerShape(4.dp)))
+                }
+            }
+        }
+    }
+}
+
+private fun miniVisualNow(motion: PlayerMotion, fullscreen: Boolean) = !fullscreen && motion.morph > .55f
 
 internal fun watchAge(date: DateWrapper?): String? {
     val time = date?.offsetDateTime() ?: return null

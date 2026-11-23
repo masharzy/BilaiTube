@@ -180,7 +180,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         if (video == null || pip || backgroundRequested || !engine.state.value.playing) return
         if (Build.VERSION.SDK_INT < 26 ||
             !activity.packageManager.hasSystemFeature("android.software.picture_in_picture")) return
-        overlay = null
+        sheet = null
         runCatching {
             activity.enterPictureInPictureMode(PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9)).build())
@@ -197,15 +197,20 @@ class BilaiShell(private val activity: ComponentActivity) {
      * playback pauses so nothing keeps running (and draining the battery) in the background,
      * unless background play was chosen explicitly.
      */
+    private val backgroundPlay get() = PreferenceManager.getDefaultSharedPreferences(activity)
+        .getBoolean(BACKGROUND_PLAY_KEY, false)
+
     fun onStop() {
         if (pipClosed && !pip) {
             pipClosed = false
+            // Background play on: closing the floating window keeps the audio going.
+            if (backgroundPlay && engine.state.value.playing) { compact = true; return }
             engine.stop()
             video = null
             compact = false
             return
         }
-        if (pip || backgroundRequested) return
+        if (pip || backgroundRequested || backgroundPlay) return
         if (engine.state.value.playing) engine.togglePlay()
     }
 
@@ -224,7 +229,7 @@ class BilaiShell(private val activity: ComponentActivity) {
             toast = "Picture-in-picture unavailable"
             return
         }
-        overlay = null
+        sheet = null
         if (!activity.enterPictureInPictureMode(PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9)).build())) {
             toast = "Picture-in-picture unavailable"
@@ -244,10 +249,10 @@ class BilaiShell(private val activity: ComponentActivity) {
             .subscribe({
                 pendingAccountActions.remove(key)
                 success()
-            }, {
+            }, { error ->
                 pendingAccountActions.remove(key)
                 failure()
-                toast = "YouTube couldn't complete the action"
+                toast = "YouTube refused: " + (error.message ?: error.javaClass.simpleName)
             }))
     }
 
@@ -300,7 +305,8 @@ class BilaiShell(private val activity: ComponentActivity) {
         InfoCache.getInstance().clearCache()
         homeFeed.restart()
         loadAccountProfile()
-        overlay = null
+        sheet = null
+        pages.clear()
         select(Tab.YOU)
         toast = if (signedIn) "Google account connected" else "Signed out"
     }
@@ -313,7 +319,7 @@ class BilaiShell(private val activity: ComponentActivity) {
         if (enabled) previousOrientation = activity.requestedOrientation
         fullscreen = enabled
         compact = false
-        overlay = null
+        sheet = null
         activity.requestedOrientation = if (enabled) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             else previousOrientation
         WindowCompat.getInsetsController(activity.window, view).apply {
@@ -321,9 +327,29 @@ class BilaiShell(private val activity: ComponentActivity) {
             if (enabled) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
         }
     }
-    private var overlay by mutableStateOf<String?>(null)
+    /** Sheets float above everything (including the player); pages sit under the mini player. */
+    private var sheet by mutableStateOf<String?>(null)
+    private val pages = androidx.compose.runtime.mutableStateListOf<String>()
+    private val pageNames = setOf("Sign in", "Settings", "Search", "Channel", "Remote playlist", "History",
+        "Watch Later", "Playlists", "Offline Downloads")
+    private fun isPage(name: String) = name.substringBefore(PAGE_SEP) in pageNames || name.startsWith("Account:")
+    private var overlay: String?
+        get() = sheet ?: pages.lastOrNull()
+        set(value) {
+            when {
+                value == null -> if (sheet != null) sheet = null else pages.removeLastOrNull()
+                isPage(value) -> {
+                    sheet = null
+                    // Opening a page from the watch screen shrinks the video into the mini player.
+                    if (video != null && !compact) { requestFullscreen(false); compact = true }
+                    if (pages.lastOrNull() != value) { pages.remove(value); pages.add(value) }
+                }
+                else -> sheet = value
+            }
+        }
     private var scrollHome by mutableIntStateOf(0)
-    private var browseTarget by mutableStateOf<Pair<String, String>?>(null)
+    private var savedVideo: Triple<String, String, Long>? = null
+    private var resumePaused by mutableStateOf(false)
     private val localReplies = mutableStateMapOf<Pair<String, String>, List<String>>()
     private var menuVideo by mutableStateOf<StreamInfoItem?>(null)
     private val debugReceiver = object : BroadcastReceiver() {
@@ -426,10 +452,11 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun play(url: String, title: String) {
-        if (tab == Tab.SHORTS) select(Tab.HOME)
+        savedVideo = null
+        if (tab == Tab.SHORTS) { pages.clear(); select(Tab.HOME) }
         quality = null
         compact = false
-        overlay = null
+        sheet = null
         video = url to title
         engine.play(url)
     }
@@ -440,18 +467,17 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun openChannel(url: String, title: String) {
-        browseTarget = url to title
-        overlay = "Channel"
+        overlay = "Channel$PAGE_SEP$url$PAGE_SEP$title"
     }
 
     private fun openPlaylist(url: String, title: String) {
-        browseTarget = url to title
-        overlay = "Remote playlist"
+        overlay = "Remote playlist$PAGE_SEP$url$PAGE_SEP$title"
     }
 
     private fun openOffline(uri: Uri, title: String) {
+        savedVideo = null
         compact = false
-        overlay = null
+        sheet = null
         video = uri.toString() to title
         engine.playOffline(uri)
     }
@@ -486,11 +512,22 @@ class BilaiShell(private val activity: ComponentActivity) {
     }
 
     private fun select(tab: Tab) {
+        pages.clear(); sheet = null
         if (this.tab == Tab.SHORTS && tab != Tab.SHORTS) {
             engine.stop()
             initialShortUrl = null
+            // Bring back the video that was floating before Shorts, paused, as a mini player.
+            savedVideo?.let { (url, title, position) ->
+                savedVideo = null
+                video = url to title
+                compact = true
+                resumePaused = true
+                if (url.startsWith("http")) engine.play(url, position) else engine.playOffline(Uri.parse(url))
+            }
         }
         if (tab == Tab.SHORTS && this.tab != Tab.SHORTS && video != null) {
+            savedVideo = video?.let { (url, title) -> Triple(url, title, engine.state.value.positionMs) }
+            requestFullscreen(false)
             engine.stop()
             video = null
             compact = false
@@ -510,11 +547,17 @@ class BilaiShell(private val activity: ComponentActivity) {
         LaunchedEffect(scrollHome) { if (scrollHome > 0) list.scrollToItem(0) }
         BackHandler(enabled = overlay != null || (video != null && !compact) || tab != Tab.HOME) {
             when {
-                overlay != null -> overlay = null
+                sheet != null -> sheet = null
                 fullscreen -> requestFullscreen(false)
                 video != null && !compact -> compact = true
+                pages.isNotEmpty() -> pages.removeLastOrNull()
                 else -> select(Tab.HOME)
             }
+        }
+        // A video restored after Shorts comes back paused at the spot it was left.
+        val restoring by engine.state.collectAsState()
+        LaunchedEffect(restoring.playing, resumePaused) {
+            if (resumePaused && restoring.playing) { engine.togglePlay(); resumePaused = false }
         }
         BilaiTheme(dark, red) {
             val colors = LocalBilaiColors.current
@@ -585,8 +628,66 @@ class BilaiShell(private val activity: ComponentActivity) {
                         if (tab == Tab.SHORTS) BilaiTheme(true, red) { BottomNav(tab, ::select) }
                         else BottomNav(tab, ::select)
                     }
+                    pages.lastOrNull()?.let { entry ->
+                        val parts = entry.split(PAGE_SEP)
+                        val name = parts[0]
+                        androidx.compose.runtime.key(entry) {
+                        if (name == "Sign in") {
+                            AccountPage({ overlay = null }, ::refreshAccount)
+                        } else if (name == "Settings") {
+                            BrowseScreen("Settings", { overlay = null }) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    FeedText(if (dark) "Appearance · Device dark" else "Appearance · Device light", 14, colors.text)
+                                    WatchPill(if (autoplay) "Autoplay on" else "Autoplay off", colors.text, colors.elevated, click = ::toggleAutoplay)
+                                    WatchPill(if (hideShorts) "Show Shorts" else "Hide Shorts", colors.text, colors.elevated) {
+                                        hideShorts = !hideShorts
+                                        prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
+                                    }
+                                    WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
+                                        if (signedIn) signOut() else overlay = "Sign in"
+                                    }
+                                }
+                            }
+                        } else if (name == "Search") {
+                            SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist) { url ->
+                                initialShortUrl = url; select(Tab.SHORTS)
+                            }
+                        } else if (name == "Channel" && parts.size >= 3) {
+                            val url = parts[1]
+                            ChannelPage(url, parts[2], { overlay = null }, ::play, ::openPlaylist,
+                                subscribed = subscriptions[url] == true, onSubscribe = { subscribeTo(url) })
+                        } else if (name == "Remote playlist" && parts.size >= 3) {
+                            RemotePlaylistPage(parts[1], parts[2], { overlay = null }, ::play)
+                        } else if (name.startsWith("Account:")) {
+                            val account = name.split(":", limit = 3)
+                            AccountPlaylistPage(account[1], account.getOrElse(2) { "Playlist" }, { overlay = null }, ::play)
+                        } else if (name == "History" && signedIn) {
+                            AccountPlaylistPage("FEhistory", "History", { overlay = null }, ::play)
+                        } else if (name == "Watch Later" && signedIn) {
+                            AccountPlaylistPage("WL", "Watch Later", { overlay = null }, ::play)
+                        } else if (name == "Playlists" && signedIn) {
+                            AccountPlaylistsPage({ overlay = null }, { id, title -> overlay = "Account:$id:$title" }, ::play)
+                        } else if (name in listOf("History", "Watch Later", "Playlists")) {
+                            LibraryPage(name, { overlay = null }, ::play)
+                        } else if (name == "Offline Downloads") {
+                            OfflineDownloads({ overlay = null }, ::openOffline)
+                        }
+                        }
+                    }
                     video?.let { (url, title) ->
                         val metadata by engine.current.collectAsState()
+                        // Show what the account already did: liked / disliked / subscribed.
+                        LaunchedEffect(metadata?.id, signedIn) {
+                            val id = metadata?.id ?: return@LaunchedEffect
+                            val channel = metadata?.uploaderUrl
+                            if (!signedIn || pendingAccountActions[id] == true) return@LaunchedEffect
+                            val known = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { YoutubeAccountActions.state(id) }.getOrNull()
+                            } ?: return@LaunchedEffect
+                            if (pendingAccountActions[id] != true) known.reaction?.let { reactions[id] = it }
+                            if (channel != null && pendingAccountActions[channel] != true) known.subscribed?.let { subscriptions[channel] = it }
+                        }
                         val reaction = reactions[metadata?.id] ?: Reaction.NONE
                         Watch(url, title, engine, compact, { compact = it }, videoOnly, ::requestFullscreen, playbackSpeed, pip,
                             captions != null, ::toggleCaptions, autoplay, ::toggleAutoplay,
@@ -615,66 +716,23 @@ class BilaiShell(private val activity: ComponentActivity) {
                                 }
                             })
                     }
-                    overlay?.let { name ->
+                    sheet?.let { name ->
                         if (name == "Check updates") {
-                            LaunchedEffect(Unit) { overlay = null; manualUpdateCheck++ }
-                        } else if (name == "Sign in") {
-                            AccountPage({ overlay = null }, ::refreshAccount)
-                        } else if (name == "Settings") {
-                            BrowseScreen("Settings", { overlay = null }) {
-                                Column(Modifier.fillMaxWidth().padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    FeedText(if (dark) "Appearance · Device dark" else "Appearance · Device light", 14, colors.text)
-                                    WatchPill(if (autoplay) "Autoplay on" else "Autoplay off", colors.text, colors.elevated, click = ::toggleAutoplay)
-                                    WatchPill(if (hideShorts) "Show Shorts" else "Hide Shorts", colors.text, colors.elevated) {
-                                        hideShorts = !hideShorts
-                                        prefs.edit().putBoolean("hide_shorts", hideShorts).apply()
-                                    }
-                                    WatchPill(if (signedIn) "Sign out" else "Sign in", colors.onAccent, colors.accent) {
-                                        if (signedIn) signOut() else overlay = "Sign in"
-                                    }
-                                }
-                            }
-                        } else if (name == "Search") {
-                            SearchPage({ overlay = null }, ::play, ::openChannel, ::openPlaylist) { url ->
-                                overlay = null; initialShortUrl = url; select(Tab.SHORTS)
-                            }
-                        } else if (name == "Channel") {
-                            browseTarget?.let { (url, title) ->
-                                ChannelPage(url, title, { overlay = "Search" }, ::play, ::openPlaylist,
-                                    subscribed = subscriptions[url] == true, onSubscribe = { subscribeTo(url) })
-                            }
-                        } else if (name == "Remote playlist") {
-                            browseTarget?.let { (url, title) ->
-                                RemotePlaylistPage(url, title, { overlay = "Search" }, ::play)
-                            }
-                        } else if (name.startsWith("Account:")) {
-                            val parts = name.split(":", limit = 3)
-                            AccountPlaylistPage(parts[1], parts.getOrElse(2) { "Playlist" }, { overlay = null }, ::play)
-                        } else if (name == "History" && signedIn) {
-                            AccountPlaylistPage("FEhistory", "History", { overlay = null }, ::play)
-                        } else if (name == "Watch Later" && signedIn) {
-                            AccountPlaylistPage("WL", "Watch Later", { overlay = null }, ::play)
-                        } else if (name == "Playlists" && signedIn) {
-                            AccountPlaylistsPage({ overlay = null }, { id, title -> overlay = "Account:$id:$title" }, ::play)
-                        } else if (name in listOf("History", "Watch Later", "Playlists")) {
-                            LibraryPage(name, { overlay = null }, ::play)
-                        } else if (name == "Offline Downloads") {
-                            OfflineDownloads({ overlay = null }, ::openOffline)
+                            LaunchedEffect(Unit) { sheet = null; manualUpdateCheck++ }
                         } else if (name == "Download picker") {
                             val current by engine.current.collectAsState()
                             val options = remember(current) {
                                 runCatching { engine.downloadOptions() }.getOrDefault(emptyList())
                             }
-                            DownloadPickerSheet(current, options, { overlay = null }) { option ->
+                            DownloadPickerSheet(current, options, { sheet = null }) { option ->
                                 toast = if (engine.download(option)) "Downloading ${option.label} · saved to Movies/BilaiTube"
                                     else "Download failed: " + (engine.lastDownloadError ?: "unavailable")
                             }
                         } else if (name == "Player settings") {
-                            PlayerSettings { overlay = null; settingsPage = "Player settings" }
+                            PlayerSettings { sheet = null; settingsPage = "Player settings" }
                         } else if (name in listOf("Description", "Comments", "Video options", "Sign in to continue")) {
-                            WatchSheet(name, { overlay = null })
-                        } else Overlay(name, { overlay = null })
+                            WatchSheet(name, { sheet = null })
+                        } else Overlay(name, { sheet = null })
                     }
                     UpdateChecker()
                     AnimatedVisibility(
@@ -1291,6 +1349,8 @@ class BilaiShell(private val activity: ComponentActivity) {
 
 /** YouTube needs per-video comment params we can't obtain, so posting stays off. */
 private const val COMMENT_POSTING = false
+private const val PAGE_SEP = "\u001F"
+internal const val BACKGROUND_PLAY_KEY = "bilai_background_play"
 
 internal fun Modifier.debugTag(tag: String) = if (BuildConfig.DEBUG) testTag(tag) else this
 

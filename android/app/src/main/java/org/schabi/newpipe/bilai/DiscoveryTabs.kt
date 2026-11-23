@@ -733,6 +733,11 @@ internal fun YouTab(dark: Boolean, red: Boolean, fixtureHistory: Boolean, signed
                 }
                 ProfileRow("Hide Shorts on Home", "", Icons.Rounded.Bolt, toggle = hideShorts,
                     click = toggleHideShorts)
+                var background by remember { mutableStateOf(prefs.getBoolean(BACKGROUND_PLAY_KEY, false)) }
+                ProfileRow("Background play", if (background) "Keeps playing after the mini player is closed" else "Closing the mini player stops playback",
+                    Icons.Rounded.Headphones, toggle = background) {
+                    background = !background; prefs.edit().putBoolean(BACKGROUND_PLAY_KEY, background).apply()
+                }
                 ProfileRow("Check for updates", "v" + org.schabi.newpipe.BuildConfig.VERSION_NAME,
                     Icons.Rounded.SystemUpdate, last = true) { show("Check updates") }
             }

@@ -378,7 +378,7 @@ internal fun ChannelPage(url: String, title: String, close: () -> Unit,
                     NetImage(channel?.avatarUrl, Modifier.size(48.dp).clip(CircleShape), avatar = true)
                     Column(Modifier.weight(1f)) {
                         FeedText(channel?.name ?: title, 16, p.text, FontWeight.Bold)
-                        channel?.subscriberCount?.takeIf { it >= 0 }?.let { FeedText("$it subscribers", 12, p.muted) }
+                        channel?.subscriberCount?.takeIf { it >= 0 }?.let { FeedText("${watchCount(it)} subscribers", 12, p.muted) }
                     }
                     WatchPill(if (subscribed) "Subscribed" else "Subscribe", p.onAccent, p.accent, click = onSubscribe)
                 }
@@ -398,7 +398,7 @@ internal fun ChannelPage(url: String, title: String, close: () -> Unit,
             } else items(entries.filterIsInstance<StreamInfoItem>().filter {
                 selected == "Shorts" && it.isShortFormContent || selected == "Videos" && !it.isShortFormContent
             }.distinctBy { it.url }, key = { it.url }) { entry ->
-                BrowseRow(entry.name, entry.uploaderName.orEmpty(), entry.thumbnailUrl) { play(entry.url, entry.name) }
+                VideoRow(entry, showChannel = false) { play(entry.url, entry.name) }
             }
             if (failed) item { FeedText("Couldn't load channel.", 12, p.muted) }
         }
@@ -439,7 +439,7 @@ internal fun LibraryPage(name: String, close: () -> Unit, play: (String, String)
             } else {
                 if (rows.isEmpty()) item { FeedText("No videos yet", 12, p.muted) }
                 items(rows.distinctBy { it.url }, key = { it.url }) { video ->
-                    BrowseRow(video.name, video.uploaderName.orEmpty(), video.thumbnailUrl) { play(video.url, video.name) }
+                    VideoRow(video) { play(video.url, video.name) }
                 }
             }
         }
@@ -457,6 +457,35 @@ internal fun BrowseRow(title: String, subtitle: String, image: String?, click: (
             if (subtitle.isNotEmpty()) BText(subtitle, 12f, p.muted)
         }
     }
+}
+
+/** YouTube-style list row: thumbnail with duration, title, channel, views and age. */
+@Composable
+internal fun VideoRow(video: StreamInfoItem, showChannel: Boolean = true, click: () -> Unit) {
+    val p = LocalBilaiColors.current
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = click),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.width(160.dp).aspectRatio(16f / 9).clip(RoundedCornerShape(12.dp)).background(p.elevated)) {
+            video.thumbnailUrl?.let { NetImage(it, Modifier.fillMaxSize()) }
+            val length = video.duration
+            if (length > 0) BText(formatLength(length), 11f, androidx.compose.ui.graphics.Color.White, FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
+                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = .78f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp))
+        }
+        Column(Modifier.weight(1f).padding(vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            BText(video.name, 14f, p.text, FontWeight.Medium, maxLines = 2, lineHeight = 19f)
+            if (showChannel && !video.uploaderName.isNullOrBlank()) BText(video.uploaderName, 12f, p.muted, maxLines = 1)
+            val meta = listOfNotNull(video.viewCount.takeIf { it >= 0 }?.let { "${watchCount(it)} views" },
+                watchAge(video.uploadDate) ?: video.textualUploadDate?.takeIf { it.isNotBlank() }).joinToString(" • ")
+            if (meta.isNotEmpty()) BText(meta, 12f, p.muted, maxLines = 1)
+        }
+    }
+}
+
+internal fun formatLength(seconds: Long): String {
+    val h = seconds / 3600; val m = seconds % 3600 / 60; val s = seconds % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 /** A playlist read with the signed-in account's cookies (Watch Later, Liked videos, own playlists). */
@@ -502,10 +531,7 @@ internal fun AccountPlaylistPage(playlistId: String, title: String, close: () ->
     BrowseScreen(title, close) {
         LazyColumn(state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(rows, key = { it.url }) { item ->
-                BrowseRow(item.name, listOfNotNull(item.uploaderName,
-                    item.duration.takeIf { it > 0 }?.let { formatTime(it) }).joinToString(" • "), item.thumbnailUrl) {
-                    play(item.url, item.name)
-                }
+                VideoRow(item) { play(item.url, item.name) }
             }
             when {
                 loading -> items(if (rows.isEmpty()) 4 else 1) {
@@ -567,7 +593,7 @@ internal fun RemotePlaylistPage(url: String, title: String, close: () -> Unit,
         LazyColumn(state = list, contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(rows, key = { it.url }) { item ->
-                BrowseRow(item.name, item.uploaderName.orEmpty(), item.thumbnailUrl) { play(item.url, item.name) }
+                VideoRow(item) { play(item.url, item.name) }
             }
             when {
                 loading -> item { FeedText("Loading playlist…", 12, p.muted) }
